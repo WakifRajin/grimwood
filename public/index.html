@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Grimwood</title>
+  <meta name="description" content="Play The Grimwood card game online with friends or offline against AI.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌲</text></svg>">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="logo"><span>Grimwood</span></h1>
+    <div class="topbar-info" id="topbar-info"></div>
+    <nav class="topbar-actions">
+      <button class="btn ghost" id="btn-rules" type="button">How to play</button>
+      <button class="btn ghost" id="btn-leave" type="button" hidden>Leave</button>
+    </nav>
+  </header>
+
+  <!-- Home -->
+  <main id="screen-home" class="screen">
+    <section class="hero">
+      <p class="tagline">A chaotic card game of combos, theft and sabotage.</p>
+      <label class="field">
+        <span>Your name</span>
+        <input id="in-name" maxlength="16" autocomplete="nickname" placeholder="Wanderer">
+      </label>
+    </section>
+    <div class="panels">
+      <section class="panel">
+        <h2>Play vs AI</h2>
+        <p class="muted">Offline, in your browser.</p>
+        <label class="field">
+          <span>Opponents</span>
+          <select id="in-bots">
+            <option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Difficulty</span>
+          <select id="in-level">
+            <option value="easy">Easy</option>
+            <option value="normal" selected>Normal</option>
+          </select>
+        </label>
+        <div class="row">
+          <button class="btn primary" id="btn-local" type="button">Start game</button>
+          <button class="btn" id="btn-resume" type="button" hidden>Resume</button>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Play online</h2>
+        <p class="muted" id="online-status">Create a room and share the code.</p>
+        <div class="row">
+          <button class="btn primary" id="btn-create" type="button">Create room</button>
+        </div>
+        <div class="row join-row">
+          <input id="in-code" maxlength="5" placeholder="CODE" autocapitalize="characters" aria-label="Room code">
+          <button class="btn" id="btn-join" type="button">Join</button>
+        </div>
+        <button class="btn ghost" id="btn-rejoin" type="button" hidden></button>
+      </section>
+    </div>
+  </main>
+
+  <!-- Lobby -->
+  <main id="screen-lobby" class="screen" hidden>
+    <section class="panel lobby">
+      <h2>Room <span class="code" id="lobby-code"></span></h2>
+      <p class="muted">Share this link: <button class="linkish" id="btn-copy" type="button"></button></p>
+      <ul class="lobby-list" id="lobby-players"></ul>
+      <div class="row" id="lobby-host-controls" hidden>
+        <select id="in-botlevel" aria-label="Bot difficulty">
+          <option value="easy">Easy bot</option>
+          <option value="normal" selected>Normal bot</option>
+        </select>
+        <button class="btn" id="btn-addbot" type="button">Add bot</button>
+        <button class="btn primary" id="btn-start" type="button">Start game</button>
+      </div>
+      <p class="muted" id="lobby-wait">Waiting for the host to start…</p>
+    </section>
+  </main>
+
+  <!-- Game -->
+  <main id="screen-game" class="screen game" hidden>
+    <div class="table">
+      <section class="opponents" id="opponents" aria-label="Opponents"></section>
+      <section class="center">
+        <div class="piles">
+          <button class="pile deck" id="pile-deck" type="button" aria-label="Deck">
+            <div class="card back"><div class="card-icon" aria-hidden="true">🌲</div></div>
+            <span class="pile-cta" id="deck-cta">Draw</span>
+            <span class="pile-label" id="deck-count"></span>
+          </button>
+          <button class="pile" id="pile-discard" type="button" aria-label="Discard pile">
+            <div id="discard-top"></div>
+            <span class="pile-label" id="discard-count"></span>
+          </button>
+          <div class="limbo" id="limbo"></div>
+        </div>
+        <div class="feed" id="feed" aria-live="polite"></div>
+      </section>
+      <section class="me" id="me" aria-label="You">
+        <div class="me-head">
+          <h3 id="me-name"></h3>
+          <span class="score" id="me-score"></span>
+        </div>
+        <ol class="stepper" id="stepper"></ol>
+        <div class="combos" id="me-combos"></div>
+        <div class="ready" id="ready"></div>
+        <div class="hand" id="hand" aria-label="Your hand"></div>
+      </section>
+    </div>
+    <aside class="log-panel">
+      <h3>Chronicle</h3>
+      <ol class="log" id="log"></ol>
+    </aside>
+  </main>
+
+  <!-- Decision dock: shown when the game needs your choice -->
+  <section class="decision" id="decision" hidden aria-live="assertive" aria-labelledby="decision-title">
+    <h2 id="decision-title"></h2>
+    <p class="decision-help" id="decision-help"></p>
+    <div id="decision-reveal"></div>
+    <div class="decision-options" id="decision-options"></div>
+  </section>
+
+  <!-- Card action menu -->
+  <div class="card-pop" id="card-pop" hidden role="dialog" aria-labelledby="pop-title"></div>
+
+  <!-- Info dialog (rules, discard pile, local choices) -->
+  <dialog id="dlg-info" closedby="any" aria-labelledby="info-title">
+    <div class="dlg-head">
+      <h2 id="info-title"></h2>
+      <form method="dialog"><button class="btn ghost" aria-label="Close">✕</button></form>
+    </div>
+    <div id="info-body"></div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

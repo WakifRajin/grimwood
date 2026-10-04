@@ -1,0 +1,45 @@
+{
+  "rules": {
+    "rooms": {
+      "$code": {
+        "meta": {
+          ".read": "auth != null",
+          ".write": "auth != null && (!data.exists() ? newData.child('host').val() === auth.uid : data.child('host').val() === auth.uid)",
+          "status": { ".validate": "newData.isString() && newData.val().matches(/^(lobby|playing|ended|closed)$/)" }
+        },
+        "players": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && (data.exists() || root.child('rooms/' + $code + '/meta/status').val() === 'lobby')",
+            "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 16" },
+            "online": { ".validate": "newData.isBoolean()" }
+          }
+        },
+        "bots": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid"
+        },
+        "secret": {
+          ".read": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid",
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid"
+        },
+        "views": {
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid",
+          "$uid": { ".read": "auth != null && auth.uid === $uid" }
+        },
+        "errors": {
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid",
+          "$uid": { ".read": "auth != null && auth.uid === $uid" }
+        },
+        "intents": {
+          ".read": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid",
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid",
+          "$id": {
+            ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms/' + $code + '/players/' + auth.uid).exists()",
+            ".validate": "newData.child('a').isString() && newData.child('a').val().length < 2000"
+          }
+        }
+      }
+    }
+  }
+}

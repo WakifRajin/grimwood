@@ -1,0 +1,10 @@
+{
+  "name": "grimwood",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/sim.js 2000 && node tests/online-sim.js",
+    "serve": "python -m http.server 8080 --directory public",
+    "deploy": "firebase deploy --only hosting,database"
+  }
+}
