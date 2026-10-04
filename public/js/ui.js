@@ -17,6 +17,10 @@ const TYPE_LABEL = { super: 'Supernatural', animal: 'Animal', setting: 'Setting'
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const SEAT_HUES = [32, 200, 285, 140, 340, 60];
 const icons = cards => cards.map(c => CARDS[c.k].icon).join('');
+export const ic = name => `<svg class="ic" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+// Icon-only button; the label becomes the tooltip and accessible name.
+const ib = (icon, label, attrs = '', cls = '') =>
+  `<button type="button" class="ibtn ${cls}" aria-label="${esc(label)}" title="${esc(label)}" ${attrs}>${ic(icon)}</button>`;
 const names = cards => cards.map(c => CARDS[c.k].name).join(', ');
 
 // Only touch the DOM when the markup actually changed (keeps hover, focus and animations stable).
@@ -75,7 +79,7 @@ export function openInfo(title, html, choices) {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'btn ' + (ch.primary ? 'primary' : '');
-      b.textContent = ch.label;
+      b.innerHTML = (ch.icon ? ic(ch.icon) : '') + esc(ch.label);
       b.addEventListener('click', () => { info.close(); ch.fn(); });
       wrap.append(b);
     }
@@ -162,7 +166,7 @@ export class TableUI {
     document.addEventListener('keydown', e => { if (e.key === 'Escape') this.closePop(); });
     window.addEventListener('resize', () => this.closePop());
 
-    // Table targets: players, combos, ready combos, stepper buttons.
+    // Table targets: players, combos, ready combos, turn-bar buttons.
     $('screen-game').addEventListener('click', e => {
       const t = e.target.closest('[data-steal],[data-pick],[data-combo],[data-ccard],[data-triple],[data-act]');
       if (!t) return;
@@ -214,7 +218,7 @@ export class TableUI {
     $('card-pop').hidden = true;
     $('decision').hidden = true;
     document.body.style.paddingBottom = '';
-    for (const id of ['opponents', 'me-head', 'stepper', 'me-combos', 'ready', 'hand', 'feed', 'log', 'decision-options', 'decision-reveal']) {
+    for (const id of ['opponents', 'me-head', 'turnbar', 'me-combos', 'ready', 'hand', 'feed', 'log', 'decision-options', 'decision-reveal']) {
       $(id)._html = null;
       $(id).innerHTML = '';
     }
@@ -269,7 +273,7 @@ export class TableUI {
     this.renderOpponents();
     this.renderCenter();
     this.renderMe();
-    this.renderStepper();
+    this.renderTurnbar();
     this.renderReady();
     this.renderHand();
     this.renderDecision();
@@ -323,21 +327,23 @@ export class TableUI {
       const active = v.turn.player === j && !v.over;
       const deciding = v.pending && v.pending.player === j;
       const pick = this.targets?.players.get(j);
+      const verb = pick !== undefined ? PICK_VERB[pend.task] || 'Choose' : '';
       let btn = '';
-      if (pick !== undefined) btn = `<button type="button" class="btn primary sm" data-pick="${pick}">${esc(PICK_VERB[pend.task] || 'Choose')}</button>`;
-      else if (canSteal && p.handCount >= 2) btn = `<button type="button" class="btn sm" data-steal="${j}" title="Take a random card from ${esc(p.name)}">Steal</button>`;
-      const status = [
+      if (pick !== undefined) btn = ib('target', `${verb}: ${p.name}`, `data-pick="${pick}"`, 'solid target');
+      else if (canSteal && p.handCount >= 2) btn = ib('hand', `Steal a random card from ${p.name}`, `data-steal="${j}"`, 'solid');
+      const status = pick !== undefined ? `<span class="target-txt">${esc(verb)}</span>` : [
         deciding ? '<span class="thinking">deciding</span>' : active ? '<span class="thinking">playing</span>' : '',
         p.skip ? '<span class="warn">🐺 skips next turn</span>' : '',
         online === false ? '<span class="muted">offline</span>' : '',
         v.over && v.winners.includes(j) ? '<span class="gold">👑 winner</span>' : '',
       ].filter(Boolean).join(' · ');
-      const sub = `${online !== undefined ? `<span class="dot ${online ? '' : 'off'}"></span>` : ''}${p.ai ? 'AI · ' : ''}<span class="handcount"><i class="back-ico"></i>${p.handCount}</span>`;
+      const sub = `${online !== undefined ? `<span class="dot ${online ? '' : 'off'}"></span>` : ''}${p.ai ? '<span class="ai">AI</span>' : ''}<span class="handcount" title="Cards in hand"><i class="back-ico"></i>${p.handCount}</span>`;
       const finalHand = v.over && v.finalHands ? `<div class="final-hand" title="Cards left in hand">${icons(v.finalHands[j]) || '—'}</div>` : '';
-      return `<article class="seat ${active ? 'active' : ''} ${pick !== undefined ? 'target' : ''}" style="--hue:${SEAT_HUES[j % SEAT_HUES.length]}">
-        <div class="seat-top">${this.seatHead(p, j, sub)}</div>
+      return `<article class="seat ${active ? 'active' : ''} ${pick !== undefined ? 'target' : ''}" style="--hue:${SEAT_HUES[j % SEAT_HUES.length]}" ${pick !== undefined ? `data-pick="${pick}"` : ''}>
+        <div class="seat-top">${this.seatHead(p, j, sub)}<span class="seat-act">${btn}</span></div>
+        <div class="seat-status">${status}</div>
         <div class="chips">${p.combos.map(c => this.chipHTML(c)).join('') || '<span class="muted small">No combos yet</span>'}</div>
-        ${finalHand}${status || btn ? `<div class="seat-foot"><span class="seat-status">${status}</span>${btn}</div>` : ''}
+        ${finalHand}
       </article>`;
     }).join('');
     put($('opponents'), html);
@@ -351,7 +357,6 @@ export class TableUI {
     deck.classList.toggle('glow', !!drawable);
     deck.disabled = !drawable;
     $('deck-cta').hidden = !drawable;
-    $('deck-cta').textContent = v.turn.extra > 0 && !this.targets ? 'Draw (bonus)' : 'Draw';
     $('deck-count').textContent = `Deck · ${v.deckCount}`;
     deck.querySelector('.card').classList.toggle('empty', v.deckCount === 0);
     const top = v.discard[v.discard.length - 1];
@@ -372,47 +377,60 @@ export class TableUI {
       || '<span class="muted small">No combos yet. Only combos on the table score.</span>');
   }
 
-  renderStepper() {
+  // One fixed-height line: progress pips, what to do now, and the action for it.
+  renderTurnbar() {
     const v = this.view;
-    let html;
+    const pip = (n, st) => `<span class="tb-pip ${st}">${st === 'done' ? ic('check') : n}</span>`;
+    let pips = '', title = '', sub = '', acts = '', mood = 'idle';
     if (v.over) {
-      html = `<li class="step now"><div><b>Game over.</b> ${v.winners.map(i => esc(v.players[i].name)).join(' & ')} win${v.winners.length > 1 ? '' : 's'}.
-        <button type="button" class="btn sm primary" data-act="results">See results</button></div></li>`;
+      title = 'Game over';
+      sub = `${v.winners.map(i => esc(v.players[i].name)).join(' & ')} win${v.winners.length > 1 ? '' : 's'}`;
+      acts = ib('trophy', 'See results', 'data-act="results"', 'primary');
+      mood = 'now';
     } else if (this.hostOffline) {
-      html = '<li class="step idle"><div><b>Paused.</b> The host is offline. The game continues when they rejoin.</div></li>';
+      title = 'Paused';
+      sub = 'The host is offline. The game continues when they rejoin.';
     } else if (v.turn.player !== v.me) {
-      const who = v.players[v.turn.player].name;
-      const waiting = v.pending && v.pending.player !== v.me && v.pending.player !== v.turn.player
-        ? ` · waiting for ${esc(v.players[v.pending.player].name)}` : '';
-      html = `<li class="step idle"><div><span class="thinking">${esc(who)} is playing</span>${waiting}</div></li>`;
+      title = `<span class="thinking">${esc(v.players[v.turn.player].name)} is playing</span>`;
+      sub = v.pending && v.pending.player !== v.me && v.pending.player !== v.turn.player
+        ? `Waiting for ${esc(v.players[v.pending.player].name)} to decide` : 'Their moves appear in the feed above';
     } else if (this.myPending()) {
-      html = '<li class="step now"><div><b>Your decision:</b> choose in the panel at the bottom.</div></li>';
+      title = 'Your decision';
+      sub = 'Choose in the panel below';
+      mood = 'now';
     } else if (v.pending) {
-      html = `<li class="step idle"><div><span class="thinking">Waiting for ${esc(v.players[v.pending.player].name)} to decide</span></div></li>`;
+      title = `<span class="thinking">Waiting for ${esc(v.players[v.pending.player].name)}</span>`;
+      sub = 'They are deciding';
     } else if (v.turn.phase === 'wrap') {
-      html = `<li class="step done"><span class="num">✓</span><div>Turn closed</div></li>
-        <li class="step now"><span class="num">3</span><div><b>Lay down your combo</b> (button above your hand), then
-        <button type="button" class="btn sm primary" data-act="end">End turn</button></div></li>`;
+      pips = pip(1, 'done') + pip(2, 'done');
+      title = 'Lay down your combo';
+      sub = 'Then end your turn';
+      acts = ib('check', 'End turn', 'data-act="end"', 'primary');
+      mood = 'now';
     } else {
       const t = v.turn;
+      const hasPlayable = v.hand.some(c => hasPower(c.k) || c.k === 'rune');
+      const step1Done = t.play === 0 || !hasPlayable;
       const canDraw = v.deckCount > 0;
       const canSteal = v.players.some((p, i) => i !== v.me && p.handCount >= 2);
-      const hasPlayable = v.hand.some(c => hasPower(c.k) || c.k === 'rune');
-      const step1 = t.play > 0 && !hasPlayable
-        ? '<li class="step done"><span class="num">–</span><div>No card to play</div></li>'
-        : t.play > 0
-        ? '<li class="step now"><span class="num">1</span><div><b>Play a card</b> <span class="muted">(optional)</span><span class="step-sub">Click a glowing card in your hand.</span></div></li>'
-        : '<li class="step done"><span class="num">✓</span><div>Card played</div></li>';
-      const bonus = t.extra > 0
-        ? `<li class="step bonus"><span class="num">★</span><div><b>${plural(t.extra, 'bonus action')}</b><span class="step-sub">Draw, steal or use a power without ending your turn.</span></div></li>` : '';
-      const close = canDraw || canSteal
-        ? `<li class="step ${t.play > 0 && hasPlayable ? '' : 'now'}"><span class="num">2</span><div><b>${t.extra > 0 ? 'Then draw or steal' : 'Draw or steal'}</b> to end your turn
-            <span class="step-sub">${canDraw ? `<button type="button" class="btn sm ${t.play > 0 && hasPlayable ? '' : 'primary'}" data-act="draw">${t.extra > 0 ? 'Draw (bonus)' : 'Draw a card'}</button>` : ''}
-            ${canSteal ? `${canDraw ? 'or' : ''} press <i>Steal</i> on a player` : ''}</span></div></li>`
-        : '<li class="step now"><span class="num">2</span><div>Nothing to draw or steal. <button type="button" class="btn sm primary" data-act="pass">Pass</button></div></li>';
-      html = step1 + bonus + close;
+      pips = pip(1, step1Done ? 'done' : 'now') + pip(2, step1Done ? 'now' : '');
+      mood = 'now';
+      if (t.extra > 0) {
+        title = `★ ${plural(t.extra, 'bonus action')}`;
+        sub = 'Draw, steal or play another power';
+      } else if (!step1Done) {
+        title = 'Play a card, then draw or steal';
+        sub = 'Pick a glowing card. Playing one is optional.';
+      } else {
+        title = 'Draw or steal to end your turn';
+        sub = canSteal ? 'Use the deck, or the hand icon on a player' : 'Use the deck';
+      }
+      if (canDraw) acts = ib('draw', t.extra > 0 ? 'Draw (bonus action)' : 'Draw a card', 'data-act="draw"', 'primary');
+      else if (!canSteal) acts = ib('skip', 'Pass', 'data-act="pass"', 'primary');
     }
-    put($('stepper'), html);
+    put($('turnbar'), `<div class="tb-pips">${pips}</div>
+      <div class="tb-text"><b>${title}</b><span>${sub}</span></div><div class="tb-acts">${acts}</div>`);
+    $('turnbar').dataset.mood = mood;
   }
 
   renderReady() {
@@ -423,7 +441,7 @@ export class TableUI {
     const myMove = this.canAct() && ['main', 'wrap'].includes(v.turn.phase);
     const triples = myMove ? readyTriples(hand) : [];
     const chips = triples.map((tri, i) =>
-      `<button type="button" class="btn ready-btn" data-triple="${i}">Lay down ${icons(tri)} <b>+${tripleValue(tri)} pts</b></button>`).join('');
+      `<button type="button" class="btn ready-btn" data-triple="${i}" title="Lay down this combo" aria-label="Lay down ${esc(names(tri))} for ${tripleValue(tri)} points">${ic('place')}${icons(tri)}<b>+${tripleValue(tri)}</b></button>`).join('');
     const prog = k => `<span class="prog ${count(k) >= 3 ? 'full' : ''}" title="3 ${CARDS[k].name}s = 10 pts">${CARDS[k].icon} ${count(k)}/3</span>`;
     const setting = ['swamp', 'path', 'clearing'].map(k => `<span class="${count(k) ? '' : 'dim'}" title="${CARDS[k].name}">${CARDS[k].icon}${count(k)}</span>`).join(' ');
     put($('ready'), `<div class="ready-actions">${chips}</div><span class="tracker" aria-label="Combo progress">${prog('owl')}${prog('crow')}
@@ -479,14 +497,14 @@ export class TableUI {
     if (this.pop.stage === 'place') {
       const spots = this.eligibleCombos();
       body = `<p class="pop-q">${this.pop.mode === 'play' ? 'Use its power and put it' : 'Put it'} where?</p><div class="pop-actions">
-        <button type="button" class="btn" data-pop="to" data-arg="new">Start a new combo <b>+1 pt</b></button>
-        ${spots.map(c => `<button type="button" class="btn" data-pop="to" data-arg="${c.id}">Add to ${icons(c.cards)} <b>+${SUPER_POINTS[c.cards.length + 1] - SUPER_POINTS[c.cards.length]} pts</b></button>`).join('')}
-        <button type="button" class="btn ghost sm" data-pop="back">← Back</button></div>`;
+        <button type="button" class="btn" data-pop="to" data-arg="new">${ic('plus')}<span>New combo</span><b>+1</b></button>
+        ${spots.map(c => `<button type="button" class="btn" data-pop="to" data-arg="${c.id}">${ic('place')}<span>${icons(c.cards)}</span><b>+${SUPER_POINTS[c.cards.length + 1] - SUPER_POINTS[c.cards.length]}</b></button>`).join('')}
+        <button type="button" class="btn ghost sm" data-pop="back">${ic('back')}<span>Back</span></button></div>`;
     } else {
       const acts = [];
-      if (main && hasPower(card.k) && tokens > 0) acts.push('<button type="button" class="btn primary" data-pop="power">✦ Use power</button>');
-      if (myTurn && isSuper(card.k)) acts.push(`<button type="button" class="btn" data-pop="place">${card.k === 'dragon' ? 'Place to protect a combo' : 'Place for points only'}</button>`);
-      if (main && card.k === 'rune' && tokens > 0) acts.push('<button type="button" class="btn primary" data-pop="rune">Play Rune: +2 bonus actions</button>');
+      if (main && hasPower(card.k) && tokens > 0) acts.push(`<button type="button" class="btn primary" data-pop="power">${ic('spark')}<span>Use power</span></button>`);
+      if (myTurn && isSuper(card.k)) acts.push(`<button type="button" class="btn" data-pop="place">${ic('place')}<span>${card.k === 'dragon' ? 'Protect a combo' : 'Place for points'}</span></button>`);
+      if (main && card.k === 'rune' && tokens > 0) acts.push(`<button type="button" class="btn primary" data-pop="rune">${ic('rune')}<span>Play: +2 actions</span></button>`);
       let note = '';
       const have = v.hand.filter(c => c.k === card.k).length;
       if (d.type === 'animal') note = `You have ${have} of 3 ${d.name}s. With 3, a button to lay them down appears above your hand.`;

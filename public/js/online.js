@@ -8,13 +8,20 @@
 //   rooms/{code}/views/{uid} that player's redacted view, JSON string
 //   rooms/{code}/intents/{id} {uid, a, t}  actions sent to the host
 //   rooms/{code}/errors/{uid} {msg, t}     rejected-action feedback
+//   activity/{code}          last-activity timestamp (an index used to find abandoned rooms)
 // Players can only read their own view, so hands stay hidden from everyone but the host.
+//
+// Cleanup without a server: the host deletes the room when leaving, keeps `activity` fresh
+// while present, and every client sweeps rooms idle for ROOM_TTL_MS when it creates/joins.
+// database.rules.json only lets non-hosts delete rooms that are actually stale.
 import { firebaseConfig } from './firebase-config.js';
 import { newGame, viewFor } from './engine.js';
 import { GameHost } from './host.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const ROOM_TTL_MS = 3 * 60 * 60 * 1000;   // keep in sync with database.rules.json (10800000)
+const HEARTBEAT_MS = 4 * 60 * 1000;
 let fb = null;
 let initPromise = null;
 
@@ -43,6 +50,18 @@ async function doInit() {
   return fb;
 }
 
+// Delete rooms nobody has touched for ROOM_TTL_MS. Best-effort, runs in the background.
+async function sweepStaleRooms() {
+  if (!fb.query) return; // test double
+  try {
+    const q = fb.query(fb.ref(fb.db, 'activity'), fb.orderByValue(), fb.endAt(Date.now() - ROOM_TTL_MS), fb.limitToFirst(25));
+    const snap = await fb.get(q);
+    const codes = Object.keys(snap.val() || {});
+    await Promise.all(codes.map(code =>
+      fb.update(fb.ref(fb.db), { [`rooms/${code}`]: null, [`activity/${code}`]: null }).catch(() => {})));
+  } catch { /* cleanup is opportunistic */ }
+}
+
 export class OnlineRoom {
   constructor(code) {
     this.code = code;
@@ -62,8 +81,10 @@ export class OnlineRoom {
       const code = Array.from({ length: 5 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
       const room = new OnlineRoom(code);
       if ((await fb.get(room.ref('meta'))).exists()) continue;
-      await fb.set(room.ref('meta'), { host: fb.uid, status: 'lobby', created: fb.serverTimestamp() });
+      await fb.set(room.ref('meta'), { host: fb.uid, status: 'lobby', created: fb.serverTimestamp(), active: fb.serverTimestamp() });
+      await fb.set(fb.ref(fb.db, `activity/${code}`), fb.serverTimestamp());
       await room.enter(name);
+      sweepStaleRooms();
       return room;
     }
     throw new Error('Could not find a free room code. Try again.');
@@ -82,6 +103,7 @@ export class OnlineRoom {
       if (Object.keys(p.val() || {}).length + Object.keys(b.val() || {}).length >= 6) throw new Error('That room is full (6 players).');
     }
     await room.enter(name, me.exists());
+    sweepStaleRooms();
     return room;
   }
 
@@ -100,10 +122,28 @@ export class OnlineRoom {
     const emit = () => { if (st.meta !== undefined && st.players && st.bots) cb(st); };
     const sorted = (obj, key) => Object.entries(obj || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => (a[key] || 0) - (b[key] || 0));
     this.unsubs.push(
-      fb.onValue(this.ref('meta'), s => { st.meta = s.val(); this.isHost = st.meta?.host === fb.uid; emit(); }),
+      fb.onValue(this.ref('meta'), s => {
+        st.meta = s.val();
+        this.isHost = st.meta?.host === fb.uid;
+        if (this.isHost && !this.heartbeat) {
+          this.touch();
+          this.heartbeat = setInterval(() => this.touch(), HEARTBEAT_MS);
+        }
+        emit();
+      }),
       fb.onValue(this.ref('players'), s => { st.players = sorted(s.val(), 'joined'); emit(); }),
       fb.onValue(this.ref('bots'), s => { st.bots = sorted(s.val(), 'added'); emit(); }),
     );
+  }
+
+  // Host only: mark the room as alive so sweepers leave it alone.
+  touch() {
+    if (!this.isHost) return;
+    this.lastTouch = Date.now();
+    fb.update(fb.ref(fb.db), {
+      [`rooms/${this.code}/meta/active`]: fb.serverTimestamp(),
+      [`activity/${this.code}`]: fb.serverTimestamp(),
+    }).catch(() => {});
   }
 
   addBot(name, level) { return fb.push(this.ref('bots'), { name, level, added: Date.now() }); }
@@ -138,6 +178,7 @@ export class OnlineRoom {
         const status = s.over ? 'ended' : 'playing';
         if (status !== lastStatus) { upd['meta/status'] = status; lastStatus = status; }
         fb.update(this.ref(), upd).catch(e => onError?.('Sync failed: ' + e.message));
+        if (Date.now() - (this.lastTouch || 0) > 60000) this.touch();
         onView(viewFor(s, this.seat));
       },
     });
@@ -191,9 +232,12 @@ export class OnlineRoom {
     this.stopSession();
     this.unsubs.forEach(off => off());
     this.unsubs = [];
+    clearInterval(this.heartbeat);
+    this.heartbeat = null;
     try {
       await this.disconnect?.cancel();
-      if (this.isHost) await fb.update(this.ref('meta'), { status: 'closed' }); // the host's browser runs the game
+      // The host's browser runs the game, so the room goes with them.
+      if (this.isHost) await fb.update(fb.ref(fb.db), { [`rooms/${this.code}`]: null, [`activity/${this.code}`]: null });
       else if (status === 'lobby') await fb.remove(this.ref(`players/${fb.uid}`));
       else await fb.update(this.ref(`players/${fb.uid}`), { online: false });
     } catch { /* leaving is best-effort */ }

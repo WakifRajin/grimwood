@@ -1,6 +1,6 @@
 import { newGame, viewFor } from './engine.js';
 import { GameHost } from './host.js';
-import { TableUI, closeInfo, esc, openInfo, rulesHTML, showToast } from './ui.js';
+import { TableUI, closeInfo, esc, ic, openInfo, rulesHTML, showToast } from './ui.js';
 import { OnlineRoom, onlineAvailable } from './online.js';
 
 const $ = id => document.getElementById(id);
@@ -23,11 +23,11 @@ const table = new TableUI({
   },
   gameOverChoices: () => {
     if (mode === 'local') return [
-      { label: 'Play again', primary: true, fn: () => startLocal(local.config) },
-      { label: 'Main menu', fn: goHome },
+      { label: 'Play again', icon: 'refresh', primary: true, fn: () => startLocal(local.config) },
+      { label: 'Main menu', icon: 'home', fn: goHome },
     ];
-    const out = [{ label: 'Main menu', fn: goHome }];
-    if (room?.isHost) out.unshift({ label: 'New game (back to lobby)', primary: true, fn: () => room.backToLobby() });
+    const out = [{ label: 'Main menu', icon: 'home', fn: goHome }];
+    if (room?.isHost) out.unshift({ label: 'New game', icon: 'refresh', primary: true, fn: () => room.backToLobby() });
     return out;
   },
 });
@@ -50,7 +50,7 @@ function refreshHome() {
   $('btn-resume').hidden = !store.get('local');
   const last = store.get('room');
   $('btn-rejoin').hidden = !last || !onlineAvailable();
-  $('btn-rejoin').textContent = `Rejoin room ${last}`;
+  $('rejoin-label').textContent = `Rejoin room ${last}`;
   if (!onlineAvailable()) {
     $('online-status').textContent = 'Online play needs a Firebase config. See README.md.';
     $('btn-create').disabled = $('btn-join').disabled = true;
@@ -71,7 +71,7 @@ $('btn-leave').addEventListener('click', () => {
   // The host's browser runs an online game: leaving ends it for everyone.
   if (mode === 'online' && room?.isHost && roomStatus === 'playing') {
     openInfo('Leave this game?', '<p class="muted">You are the host. The game runs in your browser, so leaving ends it for everyone.</p>', [
-      { label: 'End game and leave', primary: true, fn: goHome },
+      { label: 'End game', icon: 'leave', primary: true, fn: goHome },
       { label: 'Stay', fn: () => {} },
     ]);
     return;
@@ -196,14 +196,14 @@ function renderLobby(r, st) {
   $('lobby-players').innerHTML = [
     ...st.players.map(p => `<li><span class="dot ${p.online === false ? 'off' : ''}"></span><span class="grow">${esc(p.name || 'Player')}${p.id === r.uid ? ' (you)' : ''}</span>${p.id === host ? '<span class="tag">host</span>' : ''}</li>`),
     ...st.bots.map(b => `<li><span class="dot"></span><span class="grow">${esc(b.name)}</span><span class="tag">AI · ${b.level}</span>
-      ${r.isHost ? `<button class="btn ghost" type="button" data-bot="${b.id}" aria-label="Remove ${esc(b.name)}">✕</button>` : ''}</li>`),
+      ${r.isHost ? `<button class="ibtn" type="button" data-bot="${b.id}" aria-label="Remove ${esc(b.name)}" title="Remove ${esc(b.name)}">${ic('x')}</button>` : ''}</li>`),
   ].join('');
   const total = st.players.length + st.bots.length;
   $('lobby-host-controls').hidden = !r.isHost;
   $('lobby-wait').hidden = r.isHost;
   $('btn-addbot').disabled = total >= 6;
   $('btn-start').disabled = total < 2;
-  $('btn-start').textContent = total < 2 ? 'Need 2+ players' : `Start game (${total} players)`;
+  $('start-label').textContent = total < 2 ? 'Need 2+' : `Start · ${total}`;
 }
 $('lobby-players').addEventListener('click', e => {
   const b = e.target.closest('[data-bot]');
