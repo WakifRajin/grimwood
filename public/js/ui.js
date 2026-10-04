@@ -213,7 +213,7 @@ export class TableUI {
   reset() {
     clearTimeout(this.overTimer);
     this.pop = null; this.targets = null; this.lastLogN = null; this.prevHand = new Set();
-    this.prevTurnPlayer = null; this.shownOver = false; this.view = null; this.hostOffline = false;
+    this.prevTurnPlayer = null; this.shownOver = false; this.view = null; this.hostOffline = false; this.lastActiveSeat = null;
     closeInfo();
     $('card-pop').hidden = true;
     $('decision').hidden = true;
@@ -346,8 +346,15 @@ export class TableUI {
         ${finalHand}
       </article>`;
     }).join('');
-    put($('opponents'), html);
-    $('opponents').dataset.count = order.length;
+    const strip = $('opponents');
+    put(strip, html);
+    strip.dataset.count = order.length;
+    // On phones the seats are a swipeable row: bring the active player into view when the turn moves.
+    if (v.turn.player !== this.lastActiveSeat) {
+      this.lastActiveSeat = v.turn.player;
+      const el = strip.querySelector('.seat.active');
+      if (el && strip.scrollWidth > strip.clientWidth) strip.scrollTo({ left: el.offsetLeft - strip.offsetLeft - 10, behavior: 'smooth' });
+    }
   }
 
   renderCenter() {

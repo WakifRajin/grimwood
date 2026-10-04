@@ -8,6 +8,8 @@ const store = {
   get(k) { try { return localStorage.getItem('grimwood.' + k); } catch { return null; } },
   set(k, v) { try { v == null ? localStorage.removeItem('grimwood.' + k) : localStorage.setItem('grimwood.' + k, v); } catch { /* storage unavailable */ } },
 };
+// How long a bot waits before each move (ms). Applies to offline games and to bots in rooms you host.
+const SPEEDS = { slow: 1900, normal: 1100, fast: 550, turbo: 120 };
 const BOT_NAMES = ['Morgana', 'Grimble', 'Hollow Jack', 'Vesper', 'Old Thorn', 'Nettle', 'Corvina', 'Brackwater'];
 
 let mode = null;       // 'local' | 'online'
@@ -36,6 +38,8 @@ function show(screen) {
   for (const s of ['home', 'lobby', 'game']) $('screen-' + s).hidden = s !== screen;
   $('btn-leave').hidden = screen === 'home';
   $('btn-log').hidden = screen !== 'game';
+  // Bots run in the host's browser, so only offline players and hosts control their speed.
+  $('speed-ctl').hidden = mode === 'online' && !room?.isHost;
 }
 const playerName = () => ($('in-name').value.trim() || 'Wanderer').slice(0, 16);
 
@@ -43,6 +47,15 @@ const playerName = () => ($('in-name').value.trim() || 'Wanderer').slice(0, 16);
 $('in-name').value = store.get('name') || '';
 $('in-name').addEventListener('change', () => store.set('name', playerName()));
 $('btn-rules').addEventListener('click', () => openInfo('How to play', rulesHTML()));
+
+// ---------- bot speed ----------
+function botDelay() { return SPEEDS[$('in-speed').value] ?? SPEEDS.normal; }
+$('in-speed').value = SPEEDS[store.get('speed')] ? store.get('speed') : 'normal';
+$('in-speed').addEventListener('change', () => {
+  store.set('speed', $('in-speed').value);
+  const host = mode === 'local' ? local?.host : room?.host;
+  if (host) { host.aiDelay = botDelay(); host.scheduleAI(); }
+});
 const params = new URLSearchParams(location.search);
 if (params.get('room')) $('in-code').value = params.get('room').toUpperCase();
 
@@ -93,7 +106,7 @@ function startLocal(config, saved) {
     state = newGame({ players });
   }
   const host = new GameHost(state, {
-    aiDelay: params.has('fast') ? 40 : undefined, // ?fast speeds up bots for testing
+    aiDelay: botDelay(),
     onChange: s => {
       store.set('local', s.over ? null : JSON.stringify({ config, state: s }));
       table.render(viewFor(s, 0));
@@ -179,7 +192,10 @@ async function onRoomUpdate(r, st) {
     show('game');
     const onErr = msg => showToast(msg);
     try {
-      if (r.isHost) await r.startHosting(v => table.render(v), onErr);
+      if (r.isHost) {
+        await r.startHosting(v => table.render(v), onErr);
+        if (r.host) { r.host.aiDelay = botDelay(); r.host.scheduleAI(); }
+      }
       else r.startClient(v => table.render(v), onErr);
     } catch (e) { showToast(e.message); }
   } else if (table.view) {

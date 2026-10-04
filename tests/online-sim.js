@@ -33,7 +33,7 @@ let pushN = 0;
 function makeFb(uid) {
   return {
     db: {}, uid,
-    ref: (_db, path) => ({ path }),
+    ref: (_db, path = '') => ({ path }),
     get: async r => snap(r.path),
     set: async (r, v) => { setAt(r.path, v); changed(); },
     update: async (r, obj) => { for (const [k, v] of Object.entries(obj)) setAt(r.path + '/' + k, v); changed(); },
@@ -123,6 +123,10 @@ if (!firstUpdate?.players?.some(p => p.id === 'uid-guest')) throw new Error('rej
 await hostRoom.backToLobby();
 await tick();
 if (getAt(`rooms/${hostRoom.code}/secret`) !== null) throw new Error('secret not cleared');
+if (typeof getAt(`activity/${hostRoom.code}`) !== 'number') throw new Error('activity stamp missing');
+await hostRoom.leave('lobby');
+await tick();
+if (getAt(`rooms/${hostRoom.code}`) !== null || getAt(`activity/${hostRoom.code}`) !== null) throw new Error('room not deleted when host left');
 console.log(`OK: online game finished in ${s.turn.no} turns; rejected guest actions: ${errors.length}`);
 if (errors.length) console.log(errors.slice(0, 5));
 process.exit(0);

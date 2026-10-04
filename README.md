@@ -54,7 +54,13 @@ There is no paid backend. The **host's browser runs the rules engine** ([public/
 
 Players never receive other players' hands or the deck order. The host could inspect the full state, so play with people you trust to host.
 If the host closes the tab the game pauses. When the host comes back and clicks **Rejoin room**, the game picks up where it left off.
-Old rooms are never deleted automatically. Clear them from the console now and then, or add a scheduled cleanup.
+**Rooms clean themselves up** without a paid backend:
+- When the host leaves, the room is deleted immediately, and other players are told it was closed.
+- While the host is present, their browser refreshes `rooms/{code}/meta/active` and `activity/{code}` every few minutes.
+- Whenever anyone creates or joins a room, the app deletes up to 25 rooms that have been idle for more than 3 hours. It finds them through the `activity` index.
+- The database rules let only the host delete a live room. Anyone may delete a room that is closed or idle for 3+ hours.
+
+These rules must be deployed for cleanup to work. See the deploy steps above.
 
 ## Tests
 
