@@ -1,13 +1,8 @@
-// Paste your Firebase web app config here to enable online play.
-// Firebase console → Project settings → General → Your apps → Web app → SDK setup and configuration.
-// The databaseURL field is required (Realtime Database).
-//
-// export const firebaseConfig = {
-//   apiKey: '...',
-//   authDomain: 'your-project.firebaseapp.com',
-//   databaseURL: 'https://your-project-default-rtdb.firebaseio.com',
-//   projectId: 'your-project',
-//   appId: '...',
-// };
-
-export const firebaseConfig = null;
+// Firebase web app config (public client identifiers, not secrets; access is governed by database.rules.json).
+export const firebaseConfig = {
+  apiKey: 'AIzaSyARXoCpjwvW6RNCIW56O9KvxOub1VFfaQ0',
+  authDomain: 'grimwood-cardgame.firebaseapp.com',
+  databaseURL: 'https://grimwood-cardgame-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId: 'grimwood-cardgame',
+  appId: '1:444573103328:web:3ea909ad40aa5237ec0c85',
+};
