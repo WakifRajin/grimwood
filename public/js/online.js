@@ -16,14 +16,19 @@ import { GameHost } from './host.js';
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 let fb = null;
+let initPromise = null;
 
 export const onlineAvailable = () => !!(firebaseConfig && firebaseConfig.databaseURL);
 
 // Test hook: inject a Firebase-compatible object ({db, uid, ref, get, set, ...}).
-export function __useFirebase(obj) { fb = obj; }
+export function __useFirebase(obj) { fb = obj; initPromise = Promise.resolve(obj); }
 
-async function init() {
-  if (fb) return fb;
+function init() {
+  // Memoised so concurrent clicks (Create + Join) don't initialise Firebase twice.
+  initPromise ||= doInit().catch(e => { initPromise = null; throw e; });
+  return initPromise;
+}
+async function doInit() {
   const [appMod, authMod, dbMod] = await Promise.all([
     import(`${SDK}/firebase-app.js`), import(`${SDK}/firebase-auth.js`), import(`${SDK}/firebase-database.js`),
   ]);
@@ -84,13 +89,15 @@ export class OnlineRoom {
     const me = this.ref(`players/${fb.uid}`);
     if (existing) await fb.update(me, { online: true });
     else await fb.set(me, { name, joined: fb.serverTimestamp(), online: true });
-    fb.onDisconnect(this.ref(`players/${fb.uid}/online`)).set(false);
+    this.disconnect = fb.onDisconnect(this.ref(`players/${fb.uid}/online`));
+    this.disconnect.set(false);
   }
 
   // cb({meta, players:[{id,name,online}], bots:[{id,name,level}]})
   watch(cb) {
-    const st = { meta: undefined, players: [], bots: [] };
-    const emit = () => { if (st.meta !== undefined) cb(st); };
+    // Emit only once all three lists have arrived, so routing never sees a half-loaded room.
+    const st = { meta: undefined, players: undefined, bots: undefined };
+    const emit = () => { if (st.meta !== undefined && st.players && st.bots) cb(st); };
     const sorted = (obj, key) => Object.entries(obj || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => (a[key] || 0) - (b[key] || 0));
     this.unsubs.push(
       fb.onValue(this.ref('meta'), s => { st.meta = s.val(); this.isHost = st.meta?.host === fb.uid; emit(); }),
@@ -150,7 +157,7 @@ export class OnlineRoom {
   // Non-host players: render our private view and report rejected actions.
   startClient(onView, onError) {
     this.stopSession();
-    let since = Date.now();
+    let firstError = true; // the first snapshot is whatever was left over from before
     this.session.push(
       fb.onValue(this.ref(`views/${fb.uid}`), s => {
         const raw = s.val();
@@ -161,7 +168,8 @@ export class OnlineRoom {
       }),
       fb.onValue(this.ref(`errors/${fb.uid}`), s => {
         const e = s.val();
-        if (e && e.t >= since) onError?.(e.msg);
+        if (firstError) { firstError = false; return; }
+        if (e) onError?.(e.msg);
       }),
     );
   }
@@ -184,7 +192,8 @@ export class OnlineRoom {
     this.unsubs.forEach(off => off());
     this.unsubs = [];
     try {
-      if (status === 'lobby' && this.isHost) await fb.update(this.ref('meta'), { status: 'closed' });
+      await this.disconnect?.cancel();
+      if (this.isHost) await fb.update(this.ref('meta'), { status: 'closed' }); // the host's browser runs the game
       else if (status === 'lobby') await fb.remove(this.ref(`players/${fb.uid}`));
       else await fb.update(this.ref(`players/${fb.uid}`), { online: false });
     } catch { /* leaving is best-effort */ }

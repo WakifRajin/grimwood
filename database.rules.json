@@ -11,6 +11,7 @@
           ".read": "auth != null",
           "$uid": {
             ".write": "auth != null && auth.uid === $uid && (data.exists() || root.child('rooms/' + $code + '/meta/status').val() === 'lobby')",
+            ".validate": "newData.hasChildren(['name'])",
             "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 16" },
             "online": { ".validate": "newData.isBoolean()" }
           }

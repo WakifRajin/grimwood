@@ -40,7 +40,7 @@ function makeFb(uid) {
     push: async (r, v) => { const key = 'k' + String(++pushN).padStart(6, '0'); setAt(r.path + '/' + key, v); changed(); return { path: r.path + '/' + key }; },
     remove: async r => { setAt(r.path, null); changed(); },
     serverTimestamp: () => Date.now(),
-    onDisconnect: () => ({ set: () => {} }),
+    onDisconnect: () => ({ set: () => {}, cancel: async () => {} }),
     onValue: (r, cb) => {
       let last;
       const l = () => { const s = JSON.stringify(getAt(r.path)); if (s !== last) { last = s; cb(snap(r.path)); } };
@@ -112,6 +112,13 @@ if (!s.over) throw new Error('online game did not finish');
 if (getAt(`rooms/${hostRoom.code}/meta/status`) !== 'ended') throw new Error('status not ended');
 if (!guestView.over) throw new Error('guest did not see game over');
 if (Object.keys(getAt(`rooms/${hostRoom.code}/intents`) || {}).length) throw new Error('intents not consumed');
+
+// Rejoining mid/after game: the first room update must already include the player list.
+const rejoin = await B.OnlineRoom.join(hostRoom.code, 'Guesty');
+let firstUpdate = null;
+rejoin.watch(st => { firstUpdate ||= JSON.parse(JSON.stringify(st)); });
+await tick(); await tick();
+if (!firstUpdate?.players?.some(p => p.id === 'uid-guest')) throw new Error('rejoin saw an incomplete room: ' + JSON.stringify(firstUpdate));
 
 await hostRoom.backToLobby();
 await tick();

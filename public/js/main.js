@@ -35,6 +35,7 @@ const table = new TableUI({
 function show(screen) {
   for (const s of ['home', 'lobby', 'game']) $('screen-' + s).hidden = s !== screen;
   $('btn-leave').hidden = screen === 'home';
+  $('btn-log').hidden = screen !== 'game';
 }
 const playerName = () => ($('in-name').value.trim() || 'Wanderer').slice(0, 16);
 
@@ -66,7 +67,18 @@ function goHome() {
   refreshHome();
   show('home');
 }
-$('btn-leave').addEventListener('click', goHome);
+$('btn-leave').addEventListener('click', () => {
+  // The host's browser runs an online game: leaving ends it for everyone.
+  if (mode === 'online' && room?.isHost && roomStatus === 'playing') {
+    openInfo('Leave this game?', '<p class="muted">You are the host. The game runs in your browser, so leaving ends it for everyone.</p>', [
+      { label: 'End game and leave', primary: true, fn: goHome },
+      { label: 'Stay', fn: () => {} },
+    ]);
+    return;
+  }
+  goHome();
+});
+$('btn-log').addEventListener('click', () => table.openLog());
 
 // ---------- offline vs AI ----------
 function startLocal(config, saved) {
@@ -149,6 +161,8 @@ async function onRoomUpdate(r, st) {
     return goHome();
   }
   table.presence = Object.fromEntries(st.players.map(p => [p.id, p.online !== false]));
+  const hostPlayer = st.players.find(p => p.id === meta.host);
+  table.hostOffline = !r.isHost && meta.status === 'playing' && hostPlayer?.online === false;
   const prev = roomStatus;
   roomStatus = meta.status;
 
@@ -176,11 +190,11 @@ async function onRoomUpdate(r, st) {
 function renderLobby(r, st) {
   $('lobby-code').textContent = r.code;
   const link = `${location.origin}${location.pathname}?room=${r.code}`;
-  $('btn-copy').textContent = link;
-  $('btn-copy').onclick = () => navigator.clipboard?.writeText(link).then(() => showToast('Link copied.'), () => {});
+  $('btn-copy').onclick = () => navigator.clipboard?.writeText(link)
+    .then(() => showToast('Invite link copied.', 'info'), () => showToast(link, 'info'));
   const host = st.meta.host;
   $('lobby-players').innerHTML = [
-    ...st.players.map(p => `<li><span class="dot ${p.online === false ? 'off' : ''}"></span><span class="grow">${esc(p.name)}${p.id === r.uid ? ' (you)' : ''}</span>${p.id === host ? '<span class="tag">host</span>' : ''}</li>`),
+    ...st.players.map(p => `<li><span class="dot ${p.online === false ? 'off' : ''}"></span><span class="grow">${esc(p.name || 'Player')}${p.id === r.uid ? ' (you)' : ''}</span>${p.id === host ? '<span class="tag">host</span>' : ''}</li>`),
     ...st.bots.map(b => `<li><span class="dot"></span><span class="grow">${esc(b.name)}</span><span class="tag">AI · ${b.level}</span>
       ${r.isHost ? `<button class="btn ghost" type="button" data-bot="${b.id}" aria-label="Remove ${esc(b.name)}">✕</button>` : ''}</li>`),
   ].join('');

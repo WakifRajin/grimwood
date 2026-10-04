@@ -16,7 +16,8 @@
     <h1 class="logo"><span>Grimwood</span></h1>
     <div class="topbar-info" id="topbar-info"></div>
     <nav class="topbar-actions">
-      <button class="btn ghost" id="btn-rules" type="button">How to play</button>
+      <button class="btn ghost" id="btn-log" type="button" hidden>Log</button>
+      <button class="btn ghost" id="btn-rules" type="button"><span class="long">How to play</span><span class="short">Rules</span></button>
       <button class="btn ghost" id="btn-leave" type="button" hidden>Leave</button>
     </nav>
   </header>
@@ -70,8 +71,12 @@
   <!-- Lobby -->
   <main id="screen-lobby" class="screen" hidden>
     <section class="panel lobby">
-      <h2>Room <span class="code" id="lobby-code"></span></h2>
-      <p class="muted">Share this link: <button class="linkish" id="btn-copy" type="button"></button></p>
+      <p class="muted small lobby-label">Room code</p>
+      <div class="lobby-code-row">
+        <span class="code" id="lobby-code"></span>
+        <button class="btn sm" id="btn-copy" type="button">Copy invite link</button>
+      </div>
+      <p class="muted small">Friends can enter the code on the home screen, or open the invite link.</p>
       <ul class="lobby-list" id="lobby-players"></ul>
       <div class="row" id="lobby-host-controls" hidden>
         <select id="in-botlevel" aria-label="Bot difficulty">
@@ -88,15 +93,15 @@
   <!-- Game -->
   <main id="screen-game" class="screen game" hidden>
     <div class="table">
-      <section class="opponents" id="opponents" aria-label="Opponents"></section>
+      <section class="seats" id="opponents" aria-label="Opponents"></section>
       <section class="center">
         <div class="piles">
-          <button class="pile deck" id="pile-deck" type="button" aria-label="Deck">
+          <button class="pile deck" id="pile-deck" type="button" aria-label="Draw from the deck">
             <div class="card back"><div class="card-icon" aria-hidden="true">🌲</div></div>
             <span class="pile-cta" id="deck-cta">Draw</span>
             <span class="pile-label" id="deck-count"></span>
           </button>
-          <button class="pile" id="pile-discard" type="button" aria-label="Discard pile">
+          <button class="pile" id="pile-discard" type="button" aria-label="View the discard pile">
             <div id="discard-top"></div>
             <span class="pile-label" id="discard-count"></span>
           </button>
@@ -105,17 +110,16 @@
         <div class="feed" id="feed" aria-live="polite"></div>
       </section>
       <section class="me" id="me" aria-label="You">
-        <div class="me-head">
-          <h3 id="me-name"></h3>
-          <span class="score" id="me-score"></span>
-        </div>
+        <div class="me-head" id="me-head"></div>
         <ol class="stepper" id="stepper"></ol>
-        <div class="combos" id="me-combos"></div>
-        <div class="ready" id="ready"></div>
+        <div class="me-row">
+          <div class="chips mine" id="me-combos"></div>
+          <div class="ready" id="ready"></div>
+        </div>
         <div class="hand" id="hand" aria-label="Your hand"></div>
       </section>
     </div>
-    <aside class="log-panel">
+    <aside class="log-panel" aria-label="Game log">
       <h3>Chronicle</h3>
       <ol class="log" id="log"></ol>
     </aside>
@@ -141,7 +145,7 @@
     <div id="info-body"></div>
   </dialog>
 
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 
   <script type="module" src="js/main.js"></script>
 </body>
