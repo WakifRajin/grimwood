@@ -7,6 +7,16 @@ A browser version of **The Grimwood** (2016), a chaotic card game for 2–6 play
 
 Plain HTML/CSS/JS (ES modules), no build step.
 
+## Features
+
+- Offline vs 1–5 bots (Easy / Normal), saved automatically so you can resume.
+- Online rooms with a code or invite link. Bots can fill seats, and rooms clean themselves up.
+- Animated playback of every move: flying cards, a spotlight for played powers, turn banners and score pop-ups.
+- Generated sound effects and ambient background music (Web Audio, no audio files).
+- Settings: music and effects volume, mute, bot speed, reduced animations, and vibration on phones.
+- Installable app that plays offline vs AI (manifest + service worker).
+- Works on phones and desktops, with keyboard support and screen-reader labels.
+
 ## Run locally
 
 ```bash
@@ -14,6 +24,7 @@ npm run serve
 ```
 
 Then open http://localhost:8080. ES modules need a web server; opening `index.html` as a file won't work.
+`scripts/serve.js` applies the same response headers as Firebase Hosting, including the content security policy, so problems show up before you deploy.
 
 ## Enable online play (Firebase)
 
@@ -81,6 +92,11 @@ npm test
 | `public/js/host.js` | Applies actions and drives bot turns (offline + online host) |
 | `public/js/online.js` | Firebase rooms, lobby, host/client sync |
 | `public/js/ui.js` | Table rendering, prompts, rules dialog |
+| `public/js/audio.js` | Synthesised sound effects and generative background music |
+| `public/js/settings.js` | Saved preferences and the Settings dialog |
+| `public/sw.js` | Service worker: network-first caching for offline play |
+| `scripts/serve.js` | Local server that applies `firebase.json` headers |
+| `public/js/fx.js` | Event animations: flying cards, power spotlight, turn banner, score pop-ups |
 | `public/js/main.js` | Screens and wiring |
 
 ## Rules interpretations

@@ -35,10 +35,12 @@ function removeById(arr, id) {
 const nm = (s, p) => s.players[p].name;
 const cn = c => cardName(c.k);
 
-function log(s, msg, to) {
+// `ev` is a small structured description of a public event, used by the UI to animate it.
+function log(s, msg, to, ev) {
   s.logN = (s.logN || 0) + 1;
   const e = { n: s.logN, msg };
   if (to) e.to = [...new Set(to)];
+  if (ev) e.ev = ev;
   s.log.push(e);
   if (s.log.length > 150) s.log.splice(0, s.log.length - 150);
 }
@@ -84,7 +86,7 @@ function drawCard(s, p) {
   const c = takeFromDeck(s);
   if (!c) { log(s, `${nm(s, p)} tries to draw, but the deck is empty.`); return null; }
   s.players[p].hand.push(c);
-  log(s, `${nm(s, p)} draws a card.`);
+  log(s, `${nm(s, p)} draws a card.`, null, { t: 'draw', p });
   log(s, `You drew ${cn(c)}.`, [p]);
   return c;
 }
@@ -159,7 +161,7 @@ TASKS.steal = {
     const tgt = s.players[t.target];
     if (choice === 'block') {
       s.discard.push(tgt.hand.splice(tgt.hand.findIndex(c => c.k === 'amulet'), 1)[0]);
-      log(s, `${nm(s, t.target)} blocks ${nm(s, t.p)}'s steal with an Amulet!`);
+      log(s, `${nm(s, t.target)} blocks ${nm(s, t.p)}'s steal with an Amulet!`, null, { t: 'block', p: t.target, by: t.p });
       if (t.mode === 'normal') {
         log(s, `${nm(s, t.p)} loses the rest of their turn.`);
         s.turn.extra = 0;
@@ -170,7 +172,7 @@ TASKS.steal = {
     if (!tgt.hand.length) { log(s, `${nm(s, t.target)} has no cards to steal.`); return; }
     const card = removeRandom(s, tgt.hand);
     s.players[t.p].hand.push(card);
-    log(s, `${nm(s, t.p)} steals a card from ${nm(s, t.target)}.`);
+    log(s, `${nm(s, t.p)} steals a card from ${nm(s, t.target)}.`, null, { t: 'steal', p: t.p, from: t.target });
     log(s, `The stolen card was ${cn(card)}.`, [t.p, t.target]);
   },
 };
@@ -188,7 +190,7 @@ TASKS.handLimit = {
     if (id == null) return;
     const c = removeById(s.players[t.p].hand, id);
     s.discard.push(c);
-    log(s, `${nm(s, t.p)} discards ${cn(c)} (hand limit).`);
+    log(s, `${nm(s, t.p)} discards ${cn(c)} (hand limit).`, null, { t: 'discard', p: t.p, k: c.k });
     if (s.players[t.p].hand.length > HAND_LIMIT) s.queue.unshift({ t: 'handLimit', p: t.p });
   },
 };
@@ -202,7 +204,7 @@ TASKS.advance = {
       if (s.endTrigger !== null && next === s.endTrigger) return gameOver(s);
       if (s.players[next].skip > 0) {
         s.players[next].skip--;
-        log(s, `${nm(s, next)} loses this turn (Werewolf).`);
+        log(s, `${nm(s, next)} loses this turn (Werewolf).`, null, { t: 'skipped', p: next });
         continue;
       }
       break;
@@ -238,11 +240,11 @@ TASKS.freeplay = {
     if (choice.rune) {
       s.discard.push(card);
       s.turn.extra += 2;
-      log(s, `${nm(s, t.p)} plays a Rune and gains 2 extra actions.`);
+      log(s, `${nm(s, t.p)} plays a Rune and gains 2 extra actions.`, null, { t: 'rune', p: t.p });
       return;
     }
     placeSuper(s, t.p, card, choice.combo);
-    log(s, `${nm(s, t.p)} plays ${cn(card)}.`);
+    log(s, `${nm(s, t.p)} plays ${cn(card)}.`, null, { t: 'play', p: t.p, k: card.k });
     if (hasPower(card.k)) s.queue.unshift({ t: 'power', p: t.p, key: card.k, card: card.id });
   },
 };
@@ -255,7 +257,7 @@ TASKS.power = {
       s.turn.used.push(t.card);
     }
     const nmK = cardName(t.key);
-    log(s, `${CARDS[t.key].icon} ${nmK}${nmK.endsWith('s') ? "'" : "'s"} power activates for ${nm(s, t.p)}.`);
+    log(s, `${CARDS[t.key].icon} ${nmK}${nmK.endsWith('s') ? "'" : "'s"} power activates for ${nm(s, t.p)}.`, null, { t: 'power', p: t.p, k: t.key });
     const start = POWERS[t.key];
     if (start) start(s, t);
   },
@@ -295,13 +297,13 @@ TASKS.amazon = {
     };
   },
   exec(s, t, key) {
-    log(s, `${nm(s, t.p)} asks everyone for ${cardName(key)}.`);
+    log(s, `${nm(s, t.p)} asks everyone for ${cardName(key)}.`, null, { t: 'ask', p: t.p, k: key });
     let got = 0;
     for (const j of others(s, t.p)) {
       const i = s.players[j].hand.findIndex(c => c.k === key);
       if (i < 0) continue;
       s.players[t.p].hand.push(s.players[j].hand.splice(i, 1)[0]);
-      log(s, `${nm(s, j)} hands over a ${cardName(key)}.`);
+      log(s, `${nm(s, j)} hands over a ${cardName(key)}.`, null, { t: 'give', p: j, to: t.p, k: key });
       got++;
     }
     if (!got) log(s, 'Nobody had one. The Amazon missed her shot.');
@@ -320,7 +322,7 @@ TASKS.boogeyman = {
   exec(s, t, j) {
     const a = s.players[t.p], b = s.players[j];
     [a.hand, b.hand] = [b.hand, a.hand];
-    log(s, `${nm(s, t.p)} exchanges hands with ${nm(s, j)}.`);
+    log(s, `${nm(s, t.p)} exchanges hands with ${nm(s, j)}.`, null, { t: 'swapHands', p: t.p, with: j });
   },
 };
 simple('boogeyman', {});
@@ -341,7 +343,7 @@ TASKS.bride = {
   exec(s, t, v) {
     const card = takeFromCombo(s, v.owner, v.combo, v.card);
     s.players[t.p].hand.push(card);
-    log(s, `${nm(s, t.p)} takes ${cn(card)} from ${nm(s, v.owner)}.`);
+    log(s, `${nm(s, t.p)} takes ${cn(card)} from ${nm(s, v.owner)}.`, null, { t: 'take', p: t.p, from: v.owner, k: card.k });
     s.queue.unshift({ t: 'freeplay', p: t.p, cards: [card.id], optional: true });
   },
 };
@@ -351,7 +353,7 @@ POWERS.centaur = (s, t) => {
   const card = s.discard.pop();
   if (!card) { log(s, 'The discard pile is empty.'); return; }
   s.players[t.p].hand.push(card);
-  log(s, `${nm(s, t.p)} takes ${cn(card)} from the discard pile.`);
+  log(s, `${nm(s, t.p)} takes ${cn(card)} from the discard pile.`, null, { t: 'take', p: t.p, from: 'discard', k: card.k });
   s.queue.unshift({ t: 'freeplay', p: t.p, cards: [card.id], optional: true });
 };
 
@@ -361,7 +363,7 @@ POWERS.darkunicorn = (s, t) => {
     if (!h.length) continue;
     const c = removeRandom(s, h);
     s.discard.push(c);
-    log(s, `${nm(s, j)} discards ${cn(c)}.`);
+    log(s, `${nm(s, j)} discards ${cn(c)}.`, null, { t: 'discard', p: j, k: c.k });
   }
 };
 
@@ -378,7 +380,7 @@ TASKS.demon = {
     const f = findCombo(s, id);
     const combo = detachCombo(s, f.owner, id);
     s.discard.push(...combo.cards);
-    log(s, `${nm(s, t.p)} destroys ${nm(s, f.owner)}'s combo (${combo.cards.map(cn).join(', ')}).`);
+    log(s, `${nm(s, t.p)} destroys ${nm(s, f.owner)}'s combo (${combo.cards.map(cn).join(', ')}).`, null, { t: 'destroy', p: t.p, owner: f.owner });
   },
 };
 simple('demon', {});
@@ -408,7 +410,7 @@ TASKS.troll = {
   exec(s, t, j) {
     const c = removeRandom(s, s.players[j].hand);
     s.discard.push(c);
-    log(s, `${nm(s, j)} discards ${cn(c)} (Troll).`);
+    log(s, `${nm(s, j)} discards ${cn(c)} (Troll).`, null, { t: 'discard', p: j, k: c.k });
   },
 };
 simple('troll', {});
@@ -418,7 +420,7 @@ TASKS.werewolf = {
   },
   exec(s, t, j) {
     s.players[j].skip++;
-    log(s, `${nm(s, j)} will lose their next turn.`);
+    log(s, `${nm(s, j)} will lose their next turn.`, null, { t: 'curse', p: t.p, target: j });
   },
 };
 simple('werewolf', {});
@@ -436,14 +438,14 @@ TASKS.dwarf = {
     if (v === 'deck') {
       const c = takeFromDeck(s);
       hand.push(c);
-      log(s, `${nm(s, t.p)} keeps the top card of the deck.`);
+      log(s, `${nm(s, t.p)} keeps the top card of the deck.`, null, { t: 'draw', p: t.p });
       log(s, `You kept ${cn(c)}.`, [t.p]);
     } else {
       const c = s.discard.pop();
       hand.push(c);
       const k = takeFromDeck(s);
       if (k) s.discard.push(k);
-      log(s, `${nm(s, t.p)} keeps ${cn(c)} from the discard pile${k ? ` and discards ${cn(k)} from the deck` : ''}.`);
+      log(s, `${nm(s, t.p)} keeps ${cn(c)} from the discard pile${k ? ` and discards ${cn(k)} from the deck` : ''}.`, null, { t: 'take', p: t.p, from: 'discard', k: c.k });
     }
   },
 };
@@ -479,7 +481,7 @@ TASKS.faeries = {
   exec(s, t, id) {
     const c = removeById(s.discard, id);
     s.players[t.p].hand.push(c);
-    log(s, `${nm(s, t.p)} takes ${cn(c)} from the discard pile.`);
+    log(s, `${nm(s, t.p)} takes ${cn(c)} from the discard pile.`, null, { t: 'take', p: t.p, from: 'discard', k: c.k });
     const taken = [...t.taken, id];
     if (taken.length < 2 && s.discard.length) s.queue.unshift({ ...t, taken });
     else s.queue.unshift({ t: 'freeplay', p: t.p, cards: taken, optional: true });
@@ -514,7 +516,7 @@ TASKS.giant = {
   exec(s, t, id) {
     const c = removeById(s.discard, id);
     s.players[t.p].hand.push(c);
-    log(s, `${nm(s, t.p)} takes ${cn(c)} from the discard pile.`);
+    log(s, `${nm(s, t.p)} takes ${cn(c)} from the discard pile.`, null, { t: 'take', p: t.p, from: 'discard', k: c.k });
     s.queue.unshift({ t: 'freeplay', p: t.p, cards: [c.id], optional: true });
   },
 };
@@ -558,7 +560,7 @@ TASKS.highwayman2 = {
     const a = detachCombo(s, t.p, mine), b = detachCombo(s, f.owner, t.theirs);
     s.players[t.p].combos.push(b);
     s.players[f.owner].combos.push(a);
-    log(s, `${nm(s, t.p)} swaps a combo with ${nm(s, f.owner)}: gives ${a.cards.map(cn).join(', ')}, takes ${b.cards.map(cn).join(', ')}.`);
+    log(s, `${nm(s, t.p)} swaps a combo with ${nm(s, f.owner)}: gives ${a.cards.map(cn).join(', ')}, takes ${b.cards.map(cn).join(', ')}.`, null, { t: 'swapCombo', p: t.p, with: f.owner });
   },
 };
 simple('highwayman', {});
@@ -568,7 +570,7 @@ TASKS.hydra = {
     return { title: 'Hydra: look at which player\'s hand?', options: others(s, t.p).map(j => playerOpt(s, t.p, j)) };
   },
   exec(s, t, j) {
-    log(s, `${nm(s, t.p)} looks at ${nm(s, j)}'s hand.`);
+    log(s, `${nm(s, t.p)} looks at ${nm(s, j)}'s hand.`, null, { t: 'peek', p: t.p, target: j });
     s.queue.unshift(revealTask(s, t.p, `${nm(s, j)}'s hand`, [j]));
   },
 };
@@ -592,7 +594,7 @@ TASKS.nymph = {
   exec(s, t, v) {
     const card = takeFromCombo(s, v.owner, v.combo, v.card);
     s.players[t.p].hand.push(card);
-    log(s, `${nm(s, t.p)} takes ${cn(card)} from ${nm(s, v.owner)}.`);
+    log(s, `${nm(s, t.p)} takes ${cn(card)} from ${nm(s, v.owner)}.`, null, { t: 'take', p: t.p, from: v.owner, k: card.k });
     s.queue.unshift({ t: 'freeplay', p: t.p, cards: [card.id], optional: false });
   },
 };
@@ -600,7 +602,7 @@ simple('nymph', {});
 
 TASKS.sqsteal = stealPrompt('Shadow Queen: steal 1 card blind from which player?', 1);
 POWERS.shadowqueen = (s, t) => {
-  log(s, `${nm(s, t.p)} looks at every other player's hand.`);
+  log(s, `${nm(s, t.p)} looks at every other player's hand.`, null, { t: 'peek', p: t.p, target: -1 });
   s.queue.unshift(revealTask(s, t.p, 'Shadow Queen: every hand', others(s, t.p)), { t: 'sqsteal', p: t.p });
 };
 
@@ -632,7 +634,7 @@ TASKS.sorceress2 = {
     for (let i = 0; i < 2; i++) s.discard.push(hand.splice(hand.findIndex(c => c.k === k), 1)[0]);
     const f = findCombo(s, t.combo);
     s.players[t.p].combos.push(detachCombo(s, f.owner, t.combo));
-    log(s, `${nm(s, t.p)} sacrifices 2 ${cardName(k)}s and takes ${nm(s, f.owner)}'s combo!`);
+    log(s, `${nm(s, t.p)} sacrifices 2 ${cardName(k)}s and takes ${nm(s, f.owner)}'s combo!`, null, { t: 'seize', p: t.p, from: f.owner });
   },
 };
 simple('sorceress', {});
@@ -666,7 +668,7 @@ TASKS.larakiKeep = {
   exec(s, t, id) {
     const c = removeById(s.limbo, id);
     s.players[t.p].hand.push(c);
-    log(s, `${nm(s, t.p)} keeps ${cn(c)}.`);
+    log(s, `${nm(s, t.p)} keeps ${cn(c)}.`, null, { t: 'take', p: t.p, from: 'limbo', k: c.k });
     s.queue.unshift(...others(s, t.p).map(j => ({ t: 'larakiGive', p: t.p, to: j })), { t: 'limboFlush' });
   },
 };
@@ -682,7 +684,7 @@ TASKS.larakiGive = {
     if (id == null) return;
     const c = removeById(s.limbo, id);
     s.players[t.to].hand.push(c);
-    log(s, `${nm(s, t.p)} gives ${cn(c)} to ${nm(s, t.to)}.`);
+    log(s, `${nm(s, t.p)} gives ${cn(c)} to ${nm(s, t.to)}.`, null, { t: 'give', p: t.p, to: t.to, k: c.k, from: 'limbo' });
   },
 };
 TASKS.limboFlush = { exec(s) { s.discard.push(...s.limbo.splice(0)); } };
@@ -690,7 +692,7 @@ POWERS.laraki = (s, t) => {
   const n = Math.min(s.players.length, s.discard.length);
   if (!n) { log(s, 'The discard pile is empty.'); return; }
   s.limbo = s.discard.splice(s.discard.length - n, n).reverse();
-  log(s, `${nm(s, t.p)} reveals ${s.limbo.map(cn).join(', ')} from the discard pile.`);
+  log(s, `${nm(s, t.p)} reveals ${s.limbo.map(cn).join(', ')} from the discard pile.`, null, { t: 'reveal', p: t.p });
   s.queue.unshift({ t: 'larakiKeep', p: t.p });
 };
 
@@ -705,7 +707,7 @@ export const POWER_WEIGHT = {
 
 function startTurn(s, p) {
   s.turn = { player: p, play: 1, extra: 0, phase: 'main', used: [], no: (s.turn?.no || 0) + 1 };
-  log(s, `— ${nm(s, p)}'s turn —`);
+  log(s, `— ${nm(s, p)}'s turn —`, null, { t: 'turn', p });
 }
 
 function gameOver(s) {
@@ -715,7 +717,7 @@ function gameOver(s) {
   const scores = s.players.map(playerScore);
   const best = Math.max(...scores);
   s.winners = scores.map((v, i) => (v === best ? i : -1)).filter(i => i >= 0);
-  log(s, `Game over! ${s.winners.map(i => nm(s, i)).join(' & ')} win${s.winners.length > 1 ? '' : 's'} with ${best} points.`);
+  log(s, `Game over! ${s.winners.map(i => nm(s, i)).join(' & ')} win${s.winners.length > 1 ? '' : 's'} with ${best} points.`, null, { t: 'over' });
 }
 
 function run(s) {
@@ -821,7 +823,7 @@ export function apply(s, a) {
       for (const c of cards) removeById(pl.hand, c.id);
       const combo = { id: 'k' + (s.nextCombo++), type, cards, frozen: false };
       pl.combos.push(combo);
-      log(s, `${nm(s, p)} places a combo: ${cards.map(cn).join(', ')} (${comboPoints(combo)} pts).`);
+      log(s, `${nm(s, p)} places a combo: ${cards.map(cn).join(', ')} (${comboPoints(combo)} pts).`, null, { t: 'combo', p, pts: comboPoints(combo) });
       break;
     }
     case 'place_super': {
@@ -829,7 +831,7 @@ export function apply(s, a) {
       if (!isSuper(c.k)) throw new Error('Only supernaturals can be placed this way.');
       placeSuper(s, p, c, a.combo);
       removeById(pl.hand, c.id);
-      log(s, `${nm(s, p)} places ${cn(c)} without using its power.`);
+      log(s, `${nm(s, p)} places ${cn(c)} without using its power.`, null, { t: 'place', p, k: c.k });
       break;
     }
     case 'play_super': {
@@ -839,7 +841,7 @@ export function apply(s, a) {
       useToken(s);
       placeSuper(s, p, c, a.combo);
       removeById(pl.hand, c.id);
-      log(s, `${nm(s, p)} plays ${cn(c)}.`);
+      log(s, `${nm(s, p)} plays ${cn(c)}.`, null, { t: 'play', p, k: c.k });
       s.queue.push({ t: 'power', p, key: c.k, card: c.id });
       break;
     }
@@ -851,7 +853,7 @@ export function apply(s, a) {
       removeById(pl.hand, c.id);
       s.discard.push(c);
       s.turn.extra += 2;
-      log(s, `${nm(s, p)} plays a Rune and gains 2 extra actions.`);
+      log(s, `${nm(s, p)} plays a Rune and gains 2 extra actions.`, null, { t: 'rune', p });
       break;
     }
     case 'draw': {
@@ -873,7 +875,7 @@ export function apply(s, a) {
       if (!canPass(s, p)) throw new Error('You must draw or steal to close your turn.');
       s.turn.extra = 0;
       s.turn.phase = 'wrap';
-      log(s, `${nm(s, p)} cannot draw or steal and passes.`);
+      log(s, `${nm(s, p)} cannot draw or steal and passes.`, null, { t: 'pass', p });
       break;
     }
     case 'end_turn': {

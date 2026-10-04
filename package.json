@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node tests/sim.js 2000 && node tests/online-sim.js",
-    "serve": "python -m http.server 8080 --directory public",
+    "serve": "node scripts/serve.js 8080",
     "deploy": "firebase deploy --only hosting,database"
   }
 }

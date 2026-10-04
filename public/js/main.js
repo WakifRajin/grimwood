@@ -1,7 +1,12 @@
+import { deckId, setDeck } from './cards.js';
 import { newGame, viewFor } from './engine.js';
 import { GameHost } from './host.js';
-import { TableUI, closeInfo, esc, ic, openInfo, rulesHTML, showToast } from './ui.js';
+import { TableUI, closeInfo, esc, ic, openInfo, rulesHTML, setSfx, showToast } from './ui.js';
 import { OnlineRoom, onlineAvailable } from './online.js';
+import { GameAudio } from './audio.js';
+import { initSettingsUI, settings } from './settings.js';
+
+export const VERSION = '1.0.0';
 
 const $ = id => document.getElementById(id);
 const store = {
@@ -9,7 +14,9 @@ const store = {
   set(k, v) { try { v == null ? localStorage.removeItem('grimwood.' + k) : localStorage.setItem('grimwood.' + k, v); } catch { /* storage unavailable */ } },
 };
 // How long a bot waits before each move (ms). Applies to offline games and to bots in rooms you host.
-const SPEEDS = { slow: 1900, normal: 1100, fast: 550, turbo: 120 };
+// Bots also wait for the table's animations to finish; FX_SPEED scales those animations.
+const SPEEDS = { slow: 1400, normal: 700, fast: 300, turbo: 60 };
+const FX_SPEED = { slow: 1.25, normal: 1, fast: 0.65, turbo: 0.35 };
 const BOT_NAMES = ['Morgana', 'Grimble', 'Hollow Jack', 'Vesper', 'Old Thorn', 'Nettle', 'Corvina', 'Brackwater'];
 
 let mode = null;       // 'local' | 'online'
@@ -38,23 +45,69 @@ function show(screen) {
   for (const s of ['home', 'lobby', 'game']) $('screen-' + s).hidden = s !== screen;
   $('btn-leave').hidden = screen === 'home';
   $('btn-log').hidden = screen !== 'game';
-  // Bots run in the host's browser, so only offline players and hosts control their speed.
-  $('speed-ctl').hidden = mode === 'online' && !room?.isHost;
 }
 const playerName = () => ($('in-name').value.trim() || 'Wanderer').slice(0, 16);
 
 // ---------- home ----------
 $('in-name').value = store.get('name') || '';
 $('in-name').addEventListener('change', () => store.set('name', playerName()));
+// The deck only changes how cards look, so each player picks their own.
+function applyDeck(id) {
+  const deck = setDeck(id);
+  $('in-deck').value = deckId;
+  document.documentElement.lang = deck.lang;
+}
+applyDeck(store.get('deck') || 'grimwood');
+$('in-deck').addEventListener('change', () => { store.set('deck', $('in-deck').value); applyDeck($('in-deck').value); });
 $('btn-rules').addEventListener('click', () => openInfo('How to play', rulesHTML()));
 
-// ---------- bot speed ----------
-function botDelay() { return SPEEDS[$('in-speed').value] ?? SPEEDS.normal; }
-$('in-speed').value = SPEEDS[store.get('speed')] ? store.get('speed') : 'normal';
-$('in-speed').addEventListener('change', () => {
-  store.set('speed', $('in-speed').value);
-  const host = mode === 'local' ? local?.host : room?.host;
-  if (host) { host.aiDelay = botDelay(); host.scheduleAI(); }
+// ---------- settings, sound & music ----------
+const audio = new GameAudio(settings);
+setSfx(name => audio.sfx(name));
+function botDelay() { return SPEEDS[settings.speed] ?? SPEEDS.normal; }
+table.fxSpeed = FX_SPEED[settings.speed] ?? 1;
+initSettingsUI(key => {
+  if (key === 'speed') {
+    table.fxSpeed = FX_SPEED[settings.speed] ?? 1;
+    const host = mode === 'local' ? local?.host : room?.host;
+    if (host) { host.aiDelay = botDelay(); host.scheduleAI(); }
+  }
+  if (key === 'music' || key === 'sfx' || key === 'muted') {
+    audio.applyVolumes();
+    if (audio.wantMusic && !audio.musicOn) audio.startMusic();
+    if (!audio.wantMusic && audio.musicOn) audio.stopMusic();
+  }
+  if (key === 'sfx-preview') audio.sfx('draw');
+});
+$('app-version').textContent = `Version ${VERSION}`;
+// ---------- resilience ----------
+// Unexpected errors: keep playing, tell the player once, log the details.
+let lastCrashToast = 0;
+function reportError(err) {
+  console.error(err);
+  if (Date.now() - lastCrashToast < 10000) return;
+  lastCrashToast = Date.now();
+  showToast('Something went wrong. Your game is saved; reload if the table looks stuck.');
+}
+window.addEventListener('error', e => { if (e.error) reportError(e.error); });
+window.addEventListener('unhandledrejection', e => reportError(e.reason));
+// Installable / offline play.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+
+// Browsers only allow sound after a user gesture.
+const unlockAudio = () => audio.unlock();
+document.addEventListener('pointerdown', unlockAudio, { capture: true });
+document.addEventListener('keydown', unlockAudio, { capture: true });
+// A soft click for buttons (game events have their own sounds).
+document.addEventListener('click', e => {
+  if (e.target.closest('.topbar .ibtn, .panel .btn, .panel .ibtn, dialog .btn, .seg button, .pop-actions .btn')) audio.sfx('click');
+}, { capture: true });
+// Pause music in background tabs and clear the "your turn" title when the player comes back.
+document.addEventListener('visibilitychange', () => {
+  audio.setPaused(document.hidden);
+  if (!document.hidden) document.title = 'The Grimwood';
 });
 const params = new URLSearchParams(location.search);
 if (params.get('room')) $('in-code').value = params.get('room').toUpperCase();
@@ -107,6 +160,7 @@ function startLocal(config, saved) {
   }
   const host = new GameHost(state, {
     aiDelay: botDelay(),
+    waitFor: () => table.idle(),
     onChange: s => {
       store.set('local', s.over ? null : JSON.stringify({ config, state: s }));
       table.render(viewFor(s, 0));
@@ -161,6 +215,18 @@ function enterRoom(r) {
   store.set('room', r.code);
   history.replaceState(null, '', `?room=${r.code}`);
   $('topbar-info').textContent = `Online · room ${r.code}`;
+  let everConnected = false, lost = false;
+  r.onConnection = ok => {
+    if (r !== room) return;
+    if (ok) {
+      if (lost) showToast('Reconnected.', 'info');
+      everConnected = true;
+      lost = false;
+    } else if (everConnected && !lost) {
+      lost = true;
+      showToast('Connection lost. Reconnecting…', 'info');
+    }
+  };
   r.watch(st => onRoomUpdate(r, st));
 }
 
@@ -194,7 +260,7 @@ async function onRoomUpdate(r, st) {
     try {
       if (r.isHost) {
         await r.startHosting(v => table.render(v), onErr);
-        if (r.host) { r.host.aiDelay = botDelay(); r.host.scheduleAI(); }
+        if (r.host) { r.host.aiDelay = botDelay(); r.host.waitFor = () => table.idle(); r.host.scheduleAI(); }
       }
       else r.startClient(v => table.render(v), onErr);
     } catch (e) { showToast(e.message); }

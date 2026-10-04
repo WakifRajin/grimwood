@@ -7,9 +7,15 @@
 //  - When the game needs your decision, a dock appears at the bottom and the
 //    valid targets (players, combos, cards) light up on the table.
 import {
-  BASICS, CARDS, HAND_LIMIT, MAX_SUPER_COMBO, SUPERNATURALS, SUPER_POINTS, comboPoints, hasPower, isSuper,
+  BASICS, CARDS, HAND_LIMIT, artStyle, MAX_SUPER_COMBO, SUPERNATURALS, SUPER_POINTS, comboPoints, hasPower, isSuper,
 } from './cards.js';
 import { readyTriples } from './engine.js';
+import { FX } from './fx.js';
+import { reducedMotion, settings } from './settings.js';
+
+// Sound hook, set by main.js once audio exists.
+let sfx = () => {};
+export function setSfx(fn) { sfx = fn; }
 
 const $ = id => document.getElementById(id);
 export const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -33,7 +39,7 @@ function put(el, html) {
 
 export function cardHTML(c, { cls = '', tag = 'div', attrs = '' } = {}) {
   const d = CARDS[c.k];
-  return `<${tag} class="card t-${d.type} ${cls}" title="${esc(d.name)}: ${esc(d.text)}" ${attrs}>`
+  return `<${tag} class="card t-${d.type} ${d.img ? 'has-art' : ''} ${cls}" title="${esc(d.name)}: ${esc(d.text)}" ${artStyle(d)} ${attrs}>`
     + `<span class="card-type">${TYPE_LABEL[d.type]}</span>`
     + `<span class="card-icon" aria-hidden="true">${d.icon}</span><span class="card-name">${esc(d.name)}</span></${tag}>`;
 }
@@ -48,6 +54,7 @@ export function showToast(msg, kind = 'error') {
   const t = $('toast');
   t.textContent = msg;
   t.className = `toast ${kind}`;
+  if (kind === 'error') sfx('error');
   const dock = $('decision');
   t.style.setProperty('--toast-bottom', dock.hidden ? '24px' : `${dock.offsetHeight + 28}px`);
   if (t.showPopover) { try { t.hidePopover(); } catch { /* not open */ } t.showPopover(); }
@@ -129,6 +136,43 @@ const PICK_VERB = {
   demon: 'Destroy', highwayman: 'Take', highwayman2: 'Give away', sorceress: 'Take',
 };
 
+// What a player did on their latest turn, for the line under their name.
+const EV_WEIGHT = { play: 9, destroy: 8, seize: 8, swapCombo: 8, swapHands: 7, curse: 7, steal: 6, block: 6, combo: 5, give: 4, take: 4, place: 3, rune: 3, discard: 2, peek: 2, draw: 1, pass: 1 };
+function lastMove(v, j) {
+  const mine = [];
+  for (let i = v.log.length - 1; i >= 0; i--) {
+    const ev = v.log[i].ev;
+    if (!ev) continue;
+    if (ev.t === 'turn' && ev.p === j) break;
+    if (ev.p === j && EV_WEIGHT[ev.t]) mine.push(ev);
+  }
+  if (!mine.length) return '';
+  const best = mine.reduce((a, b) => (EV_WEIGHT[b.t] > EV_WEIGHT[a.t] ? b : a));
+  const who = x => (x === v.me ? 'you' : v.players[x]?.name ?? '?');
+  const card = k => `${CARDS[k].icon} ${CARDS[k].name}`;
+  const count = mine.filter(e => e.t === best.t).length;
+  switch (best.t) {
+    case 'play': return `played ${card(best.k)}`;
+    case 'destroy': return `destroyed ${who(best.owner)}'s combo`;
+    case 'seize': return `took ${who(best.from)}'s combo`;
+    case 'swapCombo': return `swapped combos with ${who(best.with)}`;
+    case 'swapHands': return `swapped hands with ${who(best.with)}`;
+    case 'curse': return `cursed ${who(best.target)} 🐺`;
+    case 'steal': return count > 1 ? `stole ${count} cards` : `stole from ${who(best.from)}`;
+    case 'block': return 'blocked a steal 🧿';
+    case 'combo': return `laid down a combo (+${best.pts})`;
+    case 'give': return `gave ${CARDS[best.k].icon} to ${who(best.to)}`;
+    case 'take': return `took ${CARDS[best.k].icon}`;
+    case 'place': return `placed ${CARDS[best.k].icon}`;
+    case 'rune': return 'played a Rune';
+    case 'discard': return `discarded ${CARDS[best.k].icon}`;
+    case 'peek': return 'peeked at a hand';
+    case 'draw': return count > 1 ? `drew ${count} cards` : 'drew a card';
+    case 'pass': return 'passed';
+  }
+  return '';
+}
+
 // ---- the table ----
 export class TableUI {
   constructor({ send, gameOverChoices }) {
@@ -145,6 +189,14 @@ export class TableUI {
     this.shownOver = false;
     this.overTimer = null;
     this.lastSend = 0;
+    // Event playback: views are queued and other players' moves animate before the table updates.
+    this.fx = new FX();
+    this.fx.sound = name => sfx(name);
+    this.fxSpeed = 1;
+    this.queue = [];
+    this.pumping = false;
+    this.lastFxN = null;
+    this.gen = 0;
 
     $('hand').addEventListener('click', e => {
       const el = e.target.closest('[data-id]');
@@ -154,6 +206,7 @@ export class TableUI {
       if (this.targets?.hand.has(id)) return this.choose(this.targets.hand.get(id));
       if (performance.now() - this.lastSend < 350) return;
       this.pop = this.pop?.id === id ? null : { id, stage: 'menu' };
+      if (this.pop) sfx('flip');
       this.renderPop();
       this.renderHandSelection();
     });
@@ -206,12 +259,19 @@ export class TableUI {
   send(action) {
     const now = performance.now();
     if (now - this.lastSend < 350) return;
+    if (this.pumping) return; // the table is still showing earlier moves; its buttons may be stale
     this.lastSend = now;
     this.rawSend(action);
   }
 
   reset() {
     clearTimeout(this.overTimer);
+    this.gen++;
+    $('screen-game').classList.remove('presenting');
+    this.queue = [];
+    this.pumping = false;
+    this.lastFxN = null;
+    this.fx.clear();
     this.pop = null; this.targets = null; this.lastLogN = null; this.prevHand = new Set();
     this.prevTurnPlayer = null; this.shownOver = false; this.view = null; this.hostOffline = false; this.lastActiveSeat = null;
     closeInfo();
@@ -264,6 +324,62 @@ export class TableUI {
 
   render(v) {
     if (!v) return;
+    this.queue.push(v);
+    if (!this.pumping) this.pump();
+  }
+
+  // Resolves once every queued update has been shown (bots wait on this to keep pace with the table).
+  async idle() {
+    while (this.pumping || this.queue.length) await new Promise(r => setTimeout(r, 60));
+  }
+
+  async pump() {
+    this.pumping = true;
+    $('screen-game').classList.add('presenting');
+    const gen = this.gen;
+    while (this.queue.length && gen === this.gen) {
+      const v = this.queue.shift();
+      const prev = this.view;
+      const events = prev && this.lastFxN !== null ? v.log.filter(e => e.ev && e.n > this.lastFxN) : [];
+      this.lastFxN = v.log.length ? v.log[v.log.length - 1].n : 0;
+      const backlog = this.queue.length;
+      // Hidden tabs pause animations (and an online host's bots wait on this table), so just update.
+      if (!events.length || backlog > 4 || document.hidden) {
+        this.renderNow(v);
+        this.fx.scorePops(prev, v);
+      this.scoreSound(prev, v);
+        continue;
+      }
+      // My own moves: show the result immediately and animate alongside. Others: animate, then update.
+      const own = v.me >= 0 && events.every(e => e.ev.p === v.me && e.ev.t !== 'turn');
+      const opts = {
+        me: v.me, names: v.players.map(p => p.name), own, speed: this.fxSpeed * (backlog > 1 ? 0.5 : 1),
+        onEvent: own ? null : e => this.narrate(e, v),
+      };
+      if (own) {
+        this.renderNow(v);
+        this.fx.play(events, opts);
+      } else {
+        await this.fx.play(events, opts);
+        if (gen !== this.gen) break;
+        this.renderNow(v);
+      }
+      this.fx.scorePops(prev, v);
+      this.scoreSound(prev, v);
+    }
+    if (gen === this.gen) {
+      this.pumping = false;
+      $('screen-game').classList.remove('presenting');
+    }
+  }
+
+  scoreSound(prev, v) {
+    if (!prev || v.me < 0) return;
+    const d = v.players[v.me].score - prev.players[v.me].score;
+    if (d) sfx(d > 0 ? 'scoreUp' : 'scoreDown');
+  }
+
+  renderNow(v) {
     const first = !this.view;
     this.view = v;
     this.targets = this.computeTargets();
@@ -284,7 +400,11 @@ export class TableUI {
     if (v.over && !this.shownOver) {
       this.shownOver = true;
       clearTimeout(this.overTimer);
-      this.overTimer = setTimeout(() => { if (this.view?.over) this.showGameOver(); }, 900);
+      this.overTimer = setTimeout(() => {
+        if (!this.view?.over) return;
+        sfx(this.view.winners.includes(this.view.me) ? 'win' : 'lose');
+        this.showGameOver();
+      }, 900);
     }
   }
 
@@ -336,10 +456,10 @@ export class TableUI {
         p.skip ? '<span class="warn">🐺 skips next turn</span>' : '',
         online === false ? '<span class="muted">offline</span>' : '',
         v.over && v.winners.includes(j) ? '<span class="gold">👑 winner</span>' : '',
-      ].filter(Boolean).join(' · ');
+      ].filter(Boolean).join(' · ') || (() => { const m = lastMove(v, j); return m ? `<span class="last-move">${esc(m)}</span>` : ''; })();
       const sub = `${online !== undefined ? `<span class="dot ${online ? '' : 'off'}"></span>` : ''}${p.ai ? '<span class="ai">AI</span>' : ''}<span class="handcount" title="Cards in hand"><i class="back-ico"></i>${p.handCount}</span>`;
       const finalHand = v.over && v.finalHands ? `<div class="final-hand" title="Cards left in hand">${icons(v.finalHands[j]) || '—'}</div>` : '';
-      return `<article class="seat ${active ? 'active' : ''} ${pick !== undefined ? 'target' : ''}" style="--hue:${SEAT_HUES[j % SEAT_HUES.length]}" ${pick !== undefined ? `data-pick="${pick}"` : ''}>
+      return `<article class="seat ${active ? 'active' : ''} ${pick !== undefined ? 'target' : ''}" data-seat="${j}" style="--hue:${SEAT_HUES[j % SEAT_HUES.length]}" ${pick !== undefined ? `data-pick="${pick}"` : ''}>
         <div class="seat-top">${this.seatHead(p, j, sub)}<span class="seat-act">${btn}</span></div>
         <div class="seat-status">${status}</div>
         <div class="chips">${p.combos.map(c => this.chipHTML(c)).join('') || '<span class="muted small">No combos yet</span>'}</div>
@@ -522,7 +642,7 @@ export class TableUI {
       else if (!myTurn && (isSuper(card.k) || card.k === 'rune')) note = 'You can play this on your turn.';
       body = `${note ? `<p class="pop-note">${esc(note)}</p>` : ''}${acts.length ? `<div class="pop-actions">${acts.join('')}</div>` : ''}`;
     }
-    pop.innerHTML = `<div class="pop-head"><span class="pop-icon t-${d.type}" aria-hidden="true">${d.icon}</span><div><h3 id="pop-title">${esc(d.name)}</h3>
+    pop.innerHTML = `<div class="pop-head"><span class="pop-icon t-${d.type} ${d.img ? 'has-art' : ''}" aria-hidden="true" ${artStyle(d)}>${d.img ? '' : d.icon}</span><div><h3 id="pop-title">${esc(d.name)}</h3>
       <span class="muted small">${TYPE_LABEL[d.type]}</span></div></div><p class="pop-text">${esc(d.text)}</p>${body}`;
     pop.hidden = false;
     // Position above the card (or below if there is no room).
@@ -586,7 +706,33 @@ export class TableUI {
     const wasHidden = dock.hidden;
     dock.hidden = false;
     document.body.style.paddingBottom = `${dock.offsetHeight + 24}px`;
-    if (wasHidden) dock.querySelector('[data-opt]')?.focus({ preventScroll: true });
+    if (wasHidden) {
+      sfx('attention');
+      dock.querySelector('[data-opt]')?.focus({ preventScroll: true });
+    }
+  }
+
+  // While an animation plays, add its line to the feed right away (the next render rebuilds the feed).
+  narrate(e, v) {
+    const feed = $('feed');
+    if (e.ev.t === 'turn') {
+      feed._html = null;
+      feed.innerHTML = `<div class="feed-head">${esc(e.msg.replace(/—/g, '').trim())}</div><ul></ul>`;
+      return;
+    }
+    let ul = feed.querySelector('ul');
+    if (!ul) { feed.querySelector('p')?.remove(); ul = document.createElement('ul'); feed.append(ul); }
+    ul.querySelector('.latest')?.classList.remove('latest');
+    // include private lines that belong with this event (e.g. "The stolen card was Owl.")
+    const lines = [e, ...v.log.filter(x => x.n > e.n && x.to && !x.ev && x.n === e.n + 1)];
+    for (const x of lines) {
+      const li = document.createElement('li');
+      li.className = `latest ${x.to ? 'private' : ''}`;
+      li.textContent = x.msg;
+      ul.append(li);
+    }
+    feed._html = null; // force the next render to rebuild
+    ul.scrollTop = ul.scrollHeight;
   }
 
   // ---- what just happened ----
@@ -645,7 +791,13 @@ export class TableUI {
       }
     }
     const myTurnStarts = !first && this.prevTurnPlayer !== null && this.prevTurnPlayer !== v.turn.player && v.turn.player === me && !v.over;
-    if (myTurnStarts) showToast(msg ? `Your turn! (${msg})` : 'Your turn!', 'turn');
+    // The animated banner already announces the turn; the toast is for news about you (or reduced motion).
+    const animated = !reducedMotion();
+    if (myTurnStarts && (msg || !animated)) showToast(msg ? `Your turn! (${msg})` : 'Your turn!', 'turn');
+    if (myTurnStarts) {
+      if (settings.vibrate) navigator.vibrate?.(msg ? [40, 60, 40] : 60);
+      if (document.hidden) document.title = '● Your turn · The Grimwood';
+    } else if (msg && settings.vibrate && v.turn.player !== me) navigator.vibrate?.(30);
     else if (msg) showToast(msg, 'info');
     this.prevTurnPlayer = v.turn.player;
     this.lastLogN = newest;

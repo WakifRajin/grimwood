@@ -4,10 +4,12 @@ import { apply, viewFor } from './engine.js';
 import { aiDecide } from './ai.js';
 
 export class GameHost {
-  constructor(state, { onChange, aiDelay = 1100 } = {}) {
+  // waitFor: optional () => Promise; bots wait for it (e.g. the table finishing its animations).
+  constructor(state, { onChange, aiDelay = 700, waitFor = null } = {}) {
     this.state = state;
     this.onChange = onChange;
     this.aiDelay = aiDelay;
+    this.waitFor = waitFor;
     this.timer = null;
     this.stopped = false;
   }
@@ -51,7 +53,10 @@ export class GameHost {
     const level = s.players[seat].ai;
     if (!level) return;
     const delay = s.pending ? this.aiDelay * 0.7 : this.aiDelay;
-    this.timer = setTimeout(() => {
+    const scheduledFor = s;
+    this.timer = setTimeout(async () => {
+      if (this.waitFor) await this.waitFor();
+      if (this.stopped || this.state !== scheduledFor) return; // something else moved first
       const action = aiDecide(viewFor(this.state, seat), level);
       if (action && !this.submit(seat, action)) return;
       // Safety net so a confused bot can never stall the table.

@@ -5,12 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b100e">
   <title>The Grimwood</title>
-  <meta name="description" content="Play The Grimwood card game online with friends or offline against AI.">
+  <meta name="description" content="Play The Grimwood, a chaotic card game of combos, theft and sabotage. Online with friends or offline against AI.">
+  <meta property="og:title" content="The Grimwood">
+  <meta property="og:description" content="A chaotic card game of combos, theft and sabotage. Play online with friends or offline against AI.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@400;500;600&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌲</text></svg>">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 </head>
 <body>
   <!-- Icon sprite (Lucide-style line icons) -->
@@ -38,6 +44,11 @@
       <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
       <symbol id="i-rune" viewBox="0 0 24 24"><path d="M7 3v18M7 4l9 4-9 4 9 9"/></symbol>
       <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10l9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></symbol>
+      <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></symbol>
+      <symbol id="i-mute" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5zM22 9l-6 6M16 9l6 6"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
+      <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+      <symbol id="i-vibrate" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M3 8v8M21 8v8"/></symbol>
       <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4M3.3 19a10 10 0 1 1 17.4 0"/></symbol>
       <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M8 16H3v5"/></symbol>
     </defs>
@@ -47,15 +58,8 @@
     <h1 class="logo">Grimwood</h1>
     <div class="topbar-info" id="topbar-info"></div>
     <nav class="topbar-actions">
-      <label class="speed-ctl" id="speed-ctl" title="Bot speed">
-        <svg class="ic" aria-hidden="true"><use href="#i-gauge"/></svg>
-        <select id="in-speed" aria-label="Bot speed">
-          <option value="slow">Slow</option>
-          <option value="normal">Normal</option>
-          <option value="fast">Fast</option>
-          <option value="turbo">Turbo</option>
-        </select>
-      </label>
+      <button class="ibtn" id="btn-sound" type="button" aria-label="Mute" title="Mute" aria-pressed="false"><svg class="ic"><use href="#i-volume"/></svg></button>
+      <button class="ibtn" id="btn-settings" type="button" aria-label="Settings" title="Settings"><svg class="ic"><use href="#i-sliders"/></svg></button>
       <button class="ibtn" id="btn-log" type="button" hidden aria-label="Game log" title="Game log"><svg class="ic"><use href="#i-log"/></svg></button>
       <button class="ibtn" id="btn-rules" type="button" aria-label="How to play" title="How to play"><svg class="ic"><use href="#i-help"/></svg></button>
       <button class="ibtn" id="btn-leave" type="button" hidden aria-label="Leave game" title="Leave game"><svg class="ic"><use href="#i-leave"/></svg></button>
@@ -66,10 +70,19 @@
   <main id="screen-home" class="screen">
     <section class="hero">
       <p class="tagline">A chaotic card game of combos, theft and sabotage.</p>
-      <label class="field">
-        <span>Your name</span>
-        <input id="in-name" maxlength="16" autocomplete="nickname" placeholder="Wanderer">
-      </label>
+      <div class="field-row">
+        <label class="field">
+          <span>Your name</span>
+          <input id="in-name" maxlength="16" autocomplete="nickname" placeholder="Wanderer">
+        </label>
+        <label class="field">
+          <span>Deck</span>
+          <select id="in-deck">
+            <option value="grimwood">The Grimwood</option>
+            <option value="goheen" lang="bn">গহীন (বাংলা)</option>
+          </select>
+        </label>
+      </div>
     </section>
     <div class="panels">
       <section class="panel">
@@ -186,6 +199,44 @@
     </div>
     <div id="info-body"></div>
   </dialog>
+
+  <!-- Settings -->
+  <dialog id="dlg-settings" closedby="any" aria-labelledby="settings-title">
+    <div class="dlg-head">
+      <h2 id="settings-title">Settings</h2>
+      <form method="dialog"><button class="ibtn" aria-label="Close" title="Close"><svg class="ic"><use href="#i-x"/></svg></button></form>
+    </div>
+    <div class="settings">
+      <label class="set-row">
+        <span class="set-label"><svg class="ic"><use href="#i-music"/></svg>Music</span>
+        <input type="range" id="set-music" min="0" max="100" step="5">
+      </label>
+      <label class="set-row">
+        <span class="set-label"><svg class="ic"><use href="#i-volume"/></svg>Sound effects</span>
+        <input type="range" id="set-sfx" min="0" max="100" step="5">
+      </label>
+      <div class="set-row">
+        <span class="set-label"><svg class="ic"><use href="#i-gauge"/></svg>Bot speed</span>
+        <div class="seg" role="group" aria-label="Bot speed">
+          <button type="button" data-speed="slow">Slow</button><button type="button" data-speed="normal">Normal</button><button type="button" data-speed="fast">Fast</button><button type="button" data-speed="turbo">Turbo</button>
+        </div>
+      </div>
+      <div class="set-row">
+        <span class="set-label"><svg class="ic"><use href="#i-spark"/></svg>Animations</span>
+        <div class="seg" role="group" aria-label="Animations">
+          <button type="button" data-motion="full">Full</button><button type="button" data-motion="reduced">Reduced</button>
+        </div>
+      </div>
+      <label class="set-row">
+        <span class="set-label"><svg class="ic"><use href="#i-vibrate"/></svg>Vibrate on your turn</span>
+        <input type="checkbox" id="set-vibrate">
+      </label>
+    </div>
+    <p class="muted small settings-foot">Bot speed applies offline and to bots in rooms you host. <span id="app-version"></span></p>
+  </dialog>
+
+  <!-- Animation layer for card flights, spotlights and banners (purely visual) -->
+  <div class="fx-layer" id="fx" aria-hidden="true"></div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 

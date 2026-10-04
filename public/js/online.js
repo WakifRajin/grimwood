@@ -82,7 +82,8 @@ export class OnlineRoom {
       const room = new OnlineRoom(code);
       if ((await fb.get(room.ref('meta'))).exists()) continue;
       await fb.set(room.ref('meta'), { host: fb.uid, status: 'lobby', created: fb.serverTimestamp(), active: fb.serverTimestamp() });
-      await fb.set(fb.ref(fb.db, `activity/${code}`), fb.serverTimestamp());
+      // Best-effort: older deployed rules may not know the activity index yet.
+      fb.set(fb.ref(fb.db, `activity/${code}`), fb.serverTimestamp()).catch(() => {});
       await room.enter(name);
       sweepStaleRooms();
       return room;
@@ -133,6 +134,7 @@ export class OnlineRoom {
       }),
       fb.onValue(this.ref('players'), s => { st.players = sorted(s.val(), 'joined'); emit(); }),
       fb.onValue(this.ref('bots'), s => { st.bots = sorted(s.val(), 'added'); emit(); }),
+      fb.onValue(fb.ref(fb.db, '.info/connected'), s => this.onConnection?.(s.val() === true)),
     );
   }
 
@@ -237,8 +239,10 @@ export class OnlineRoom {
     try {
       await this.disconnect?.cancel();
       // The host's browser runs the game, so the room goes with them.
-      if (this.isHost) await fb.update(fb.ref(fb.db), { [`rooms/${this.code}`]: null, [`activity/${this.code}`]: null });
-      else if (status === 'lobby') await fb.remove(this.ref(`players/${fb.uid}`));
+      if (this.isHost) {
+        await fb.update(fb.ref(fb.db), { [`rooms/${this.code}`]: null, [`activity/${this.code}`]: null })
+          .catch(() => fb.update(this.ref('meta'), { status: 'closed' })); // rules without room deletion
+      } else if (status === 'lobby') await fb.remove(this.ref(`players/${fb.uid}`));
       else await fb.update(this.ref(`players/${fb.uid}`), { online: false });
     } catch { /* leaving is best-effort */ }
   }
