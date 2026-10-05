@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/sim.js 2000 && node tests/online-sim.js",
+    "test": "node tests/sim.js 2000 && node tests/amulet.js && node tests/online-sim.js",
     "serve": "node scripts/serve.js 8080",
     "deploy": "firebase deploy --only hosting,database"
   }

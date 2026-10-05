@@ -4,7 +4,14 @@
 import { CARDS, artStyle } from './cards.js';
 
 const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Every wait also ends early when the playback is cut short (clear()), so a new move never queues behind an old animation.
+let cutNow = () => {};
+let cut = new Promise(r => { cutNow = r; });
+function cutAll() {
+  cutNow();
+  cut = new Promise(r => { cutNow = r; });
+}
+const sleep = ms => Promise.race([new Promise(r => setTimeout(r, ms)), cut]);
 // Browsers pause animations in background tabs, so never wait on one longer than it should take.
 const settle = (anim, ms) => Promise.race([anim.finished.catch(() => {}), sleep(ms + 400)]);
 import { reducedMotion as reduced } from './settings.js';
@@ -26,8 +33,16 @@ export class FX {
     this.gen = 0;
   }
 
+  // Fast-forward: stop the current sequence and remove its effects.
+  skip() {
+    this.gen++;
+    cutAll();
+    this.layer.replaceChildren();
+  }
+
   clear() {
     this.gen++;
+    cutAll();
     this.layer.replaceChildren();
   }
 

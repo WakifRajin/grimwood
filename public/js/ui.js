@@ -259,7 +259,7 @@ export class TableUI {
   send(action) {
     const now = performance.now();
     if (now - this.lastSend < 350) return;
-    if (this.pumping) return; // the table is still showing earlier moves; its buttons may be stale
+    if (this.queue.length) return; // newer updates are waiting to be drawn; these buttons may be stale
     this.lastSend = now;
     this.rawSend(action);
   }
@@ -267,7 +267,6 @@ export class TableUI {
   reset() {
     clearTimeout(this.overTimer);
     this.gen++;
-    $('screen-game').classList.remove('presenting');
     this.queue = [];
     this.pumping = false;
     this.lastFxN = null;
@@ -324,6 +323,12 @@ export class TableUI {
 
   render(v) {
     if (!v) return;
+    // A move of mine (or a decision for me) should never wait behind an earlier animation.
+    if (this.pumping && this.view && v.me >= 0) {
+      const mine = v.log.some(e => e.ev && e.n > (this.lastFxN ?? Infinity) && e.ev.p === v.me && e.ev.t !== 'turn');
+      const asksMe = v.pending && v.pending.player === v.me && !v.pending.waiting;
+      if (mine || asksMe) this.fx.skip();
+    }
     this.queue.push(v);
     if (!this.pumping) this.pump();
   }
@@ -333,9 +338,10 @@ export class TableUI {
     while (this.pumping || this.queue.length) await new Promise(r => setTimeout(r, 60));
   }
 
+  // Each update is drawn immediately (cards appear in hands at once); its animation then plays on
+  // top. Updates that arrive meanwhile wait, so a sequence of bot moves still reads in order.
   async pump() {
     this.pumping = true;
-    $('screen-game').classList.add('presenting');
     const gen = this.gen;
     while (this.queue.length && gen === this.gen) {
       const v = this.queue.shift();
@@ -343,34 +349,15 @@ export class TableUI {
       const events = prev && this.lastFxN !== null ? v.log.filter(e => e.ev && e.n > this.lastFxN) : [];
       this.lastFxN = v.log.length ? v.log[v.log.length - 1].n : 0;
       const backlog = this.queue.length;
-      // Hidden tabs pause animations (and an online host's bots wait on this table), so just update.
-      if (!events.length || backlog > 4 || document.hidden) {
-        this.renderNow(v);
-        this.fx.scorePops(prev, v);
-      this.scoreSound(prev, v);
-        continue;
-      }
-      // My own moves: show the result immediately and animate alongside. Others: animate, then update.
-      const own = v.me >= 0 && events.every(e => e.ev.p === v.me && e.ev.t !== 'turn');
-      const opts = {
-        me: v.me, names: v.players.map(p => p.name), own, speed: this.fxSpeed * (backlog > 1 ? 0.5 : 1),
-        onEvent: own ? null : e => this.narrate(e, v),
-      };
-      if (own) {
-        this.renderNow(v);
-        this.fx.play(events, opts);
-      } else {
-        await this.fx.play(events, opts);
-        if (gen !== this.gen) break;
-        this.renderNow(v);
-      }
+      this.renderNow(v);
       this.fx.scorePops(prev, v);
       this.scoreSound(prev, v);
+      // Hidden tabs pause animations (and an online host's bots wait on this table), so skip them.
+      if (!events.length || backlog > 4 || document.hidden) continue;
+      const own = v.me >= 0 && events.every(e => e.ev.p === v.me && e.ev.t !== 'turn');
+      await this.fx.play(events, { me: v.me, names: v.players.map(p => p.name), own, speed: this.fxSpeed * (backlog > 1 ? 0.5 : 1) });
     }
-    if (gen === this.gen) {
-      this.pumping = false;
-      $('screen-game').classList.remove('presenting');
-    }
+    if (gen === this.gen) this.pumping = false;
   }
 
   scoreSound(prev, v) {
@@ -710,29 +697,6 @@ export class TableUI {
       sfx('attention');
       dock.querySelector('[data-opt]')?.focus({ preventScroll: true });
     }
-  }
-
-  // While an animation plays, add its line to the feed right away (the next render rebuilds the feed).
-  narrate(e, v) {
-    const feed = $('feed');
-    if (e.ev.t === 'turn') {
-      feed._html = null;
-      feed.innerHTML = `<div class="feed-head">${esc(e.msg.replace(/—/g, '').trim())}</div><ul></ul>`;
-      return;
-    }
-    let ul = feed.querySelector('ul');
-    if (!ul) { feed.querySelector('p')?.remove(); ul = document.createElement('ul'); feed.append(ul); }
-    ul.querySelector('.latest')?.classList.remove('latest');
-    // include private lines that belong with this event (e.g. "The stolen card was Owl.")
-    const lines = [e, ...v.log.filter(x => x.n > e.n && x.to && !x.ev && x.n === e.n + 1)];
-    for (const x of lines) {
-      const li = document.createElement('li');
-      li.className = `latest ${x.to ? 'private' : ''}`;
-      li.textContent = x.msg;
-      ul.append(li);
-    }
-    feed._html = null; // force the next render to rebuild
-    ul.scrollTop = ul.scrollHeight;
   }
 
   // ---- what just happened ----

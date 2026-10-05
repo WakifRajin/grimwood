@@ -63,6 +63,8 @@ function usefulness(v, key) {
 
 function choose(v, level) {
   const opts = v.pending.options;
+  // Any bot holding an Amulet uses it: letting a steal through on purpose looks like a broken Amulet.
+  if (v.pending.task === 'steal' && opts.some(o => o.v === 'block')) return 'block';
   if (level === 'easy') {
     // Easy still blocks steals and discards sensibly half the time.
     if (R() < 0.5) return rnd(opts).v;

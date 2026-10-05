@@ -499,9 +499,6 @@ dialog h2 { font-size: 1.1rem; color: var(--accent-2); }
   100% { box-shadow: 0 0 0 14px rgba(var(--ring, 229, 200, 134), 0); }
 }
 .last-move { color: var(--muted); }
-/* while earlier moves are still animating, controls are briefly inert */
-.presenting .tb-acts, .presenting .seat-act, .presenting .ready-actions, .presenting #hand, .presenting #pile-deck { pointer-events: none; }
-.presenting .tb-acts, .presenting .seat-act { opacity: .5; transition: opacity .15s; }
 
 /* ============ toast (top-layer popover) ============ */
 .toast {
